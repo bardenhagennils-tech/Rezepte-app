@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Unsere Rezepte</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#c2571b">
+<style>
+  :root { --accent:#c2571b; --dark:#a34715; --bg:#faf8f5; --card:#fff; --text:#2d2a26; --muted:#8a837a; --line:#ece7e0; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body { margin:0; font-family:system-ui,sans-serif; background:var(--bg); color:var(--text); padding-bottom:96px; }
+  header { background:var(--accent); color:#fff; padding:1rem 1rem .9rem; }
+  header h1 { margin:0; font-size:1.25rem; }
+  .controls { display:flex; flex-wrap:wrap; gap:.5rem; margin-top:.7rem; }
+  #q { flex:3 1 150px; padding:.55rem .8rem; border:none; border-radius:8px; font-size:16px; }
+  .controls select { padding:.5rem; border:none; border-radius:8px; font-size:14px; max-width:46%; flex:1 1 90px; }
+  #sync { font-size:.75rem; color:rgba(255,255,255,.85); margin-top:.4rem; cursor:pointer; }
+  main { max-width:760px; margin:0 auto; padding:.8rem 1rem; }
+  #stats { color:var(--muted); font-size:.85rem; margin:.2rem 0 .5rem; }
+  #grid { display:grid; grid-template-columns:1fr; gap:.7rem; }
+  @media (min-width:700px){ #grid { grid-template-columns:1fr 1fr; } }
+  .card { background:var(--card); border-radius:12px; padding:.9rem 1rem; box-shadow:0 1px 4px rgba(0,0,0,.07); cursor:pointer; }
+  .card h2 { margin:0 0 .3rem; font-size:1.05rem; }
+  .card .meta { color:var(--muted); font-size:.83rem; display:flex; flex-wrap:wrap; gap:.45rem; align-items:center; }
+  .tag { background:#f0ebe4; border-radius:6px; padding:.08rem .45rem; }
+  .back { background:none; border:none; color:var(--accent); font-size:1rem; cursor:pointer; padding:.2rem 0; margin-bottom:.3rem; }
+  #detail h2 { font-size:1.4rem; margin:.2rem 0 .5rem; }
+  .meta2 { color:var(--muted); display:flex; gap:1rem; flex-wrap:wrap; font-size:.9rem; margin-bottom:.7rem; }
+  .portions { display:flex; align-items:center; gap:.6rem; background:var(--card); padding:.6rem .9rem; border-radius:10px; box-shadow:0 1px 4px rgba(0,0,0,.07); }
+  .portions button { width:2.3rem; height:2.3rem; border:none; border-radius:6px; background:var(--accent); color:#fff; font-size:1.25rem; cursor:pointer; }
+  #pcount { font-weight:600; min-width:6rem; text-align:center; }
+  h3 { margin:1.1rem 0 .4rem; }
+  .cols { display:grid; grid-template-columns:1fr; gap:.2rem; }
+  @media (min-width:700px){ .cols { grid-template-columns:1fr 1.4fr; gap:1.4rem; } }
+  ul, ol { padding-left:1.25rem; margin:.3rem 0; }
+  #steps li { margin-bottom:.55rem; cursor:pointer; }
+  .cook-ok { color:var(--muted); text-decoration:line-through; }
+  small.src { color:var(--muted); display:block; margin-top:.8rem; }
+  .tabbar { position:fixed; bottom:0; left:0; right:0; display:flex; background:#fff; border-top:1px solid var(--line); padding-bottom:env(safe-area-inset-bottom); z-index:20; }
+  .tabbar button { flex:1; background:none; border:none; padding:.65rem 0 .55rem; font-size:1.25rem; color:var(--muted); cursor:pointer; }
+  .tabbar button.active { color:var(--accent); }
+  .tabbar span.lbl { display:block; font-size:.68rem; }
+  .tab { display:none; }
+  .tab.active { display:block; }
+  form label { display:block; font-size:.82rem; color:var(--muted); margin:.7rem 0 .2rem; }
+  form input, form select, form textarea { width:100%; padding:.55rem .7rem; border:1px solid var(--line); border-radius:8px; font-size:16px; font-family:inherit; background:#fff; }
+  form textarea { min-height:9em; line-height:1.5; }
+  .row { display:flex; gap:.6rem; }
+  .row > div { flex:1; }
+  form button.primary { margin-top:1rem; width:100%; padding:.8rem; border:none; border-radius:10px; background:var(--accent); color:#fff; font-size:1rem; cursor:pointer; }
+  form button.primary:disabled { opacity:.6; }
+  .hint { font-size:.8rem; color:var(--muted); }
+  .msg { padding:.6rem .8rem; border-radius:8px; margin-top:.7rem; font-size:.9rem; display:none; }
+  .msg.ok { display:block; background:#e6f4e6; color:#1e5620; }
+  .msg.err { display:block; background:#fbe9e7; color:#a02c1c; }
+  .setcard { background:var(--card); border-radius:12px; padding:1rem; box-shadow:0 1px 4px rgba(0,0,0,.07); margin-bottom:.7rem; }
+  .setcard input { width:100%; padding:.55rem .7rem; border:1px solid var(--line); border-radius:8px; font-size:14px; }
+  .setcard button { margin-top:.7rem; padding:.6rem 1rem; border:none; border-radius:8px; background:var(--accent); color:#fff; cursor:pointer; }
+  .setcard button.gray { background:#8a837a; }
+  .setcard ol { font-size:.85rem; color:var(--muted); padding-left:1.2rem; }
+  a, .linkreset { color:var(--accent); }
+  .linkreset { background:none; border:none; padding:0; cursor:pointer; font-size:.85rem; }
+  #toast { position:fixed; bottom:88px; left:50%; transform:translateX(-50%); background:#333; color:#fff; padding:.55rem 1rem; border-radius:20px; font-size:.85rem; opacity:0; transition:opacity .3s; pointer-events:none; z-index:50; max-width:85%; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🍳 Unsere Rezepte</h1>
+  <div class="controls">
+    <input id="q" type="search" placeholder="Suchen (Titel, Zutaten, Tags …)">
+    <select id="fKat" onchange="renderGrid();refreshTags()"><option value="">Kategorie</option></select>
+    <select id="fTag" onchange="renderGrid()"><option value="">Tag</option></select>
+    <select id="fZeit" onchange="renderGrid()">
+      <option value="">Zeit egal</option>
+      <option value="15">bis 15 Min</option>
+      <option value="30">bis 30 Min</option>
+      <option value="60">bis 60 Min</option>
+    </select>
+  </div>
+  <div id="sync" onclick="sync(true)">–</div>
+</header>
+<main>
+  <div class="tab active" id="tab-list">
+    <div id="stats"></div>
+    <div id="grid"></div>
+    <div id="detail" style="display:none"></div>
+  </div>
+  <div class="tab" id="tab-new">
+    <h2 style="margin:.3rem 0">Neues Rezept</h2>
+    <form id="fNew" onsubmit="return false">
+      <label>Titel *</label>
+      <input id="nTitle" required>
+      <div class="row">
+        <div><label>Kategorie *</label><select id="nKat"></select></div>
+        <div><label>Schwierigkeit *</label>
+          <select id="nDiff"><option>leicht</option><option>mittel</option><option>anspruchsvoll</option></select></div>
+      </div>
+      <label>Tags (mit Komma trennen, max. 5)</label>
+      <input id="nTags" placeholder="vegetarisch, ofen, meal-prep">
+      <div class="row">
+        <div><label>Gesamtzeit in Minuten *</label><input id="nZeit" type="number" min="1" inputmode="numeric"></div>
+        <div><label>Portionen *</label><input id="nPort" type="number" min="1" inputmode="numeric"></div>
+      </div>
+      <label>Worauf bezieht sich die Portionszahl?</label>
+      <input id="nPortBezug" placeholder="Portionen oder Stück">
+      <label>Quelle (freiwillig)</label>
+      <input id="nQuelleT">
+      <label>Zutaten * (eine pro Zeile, z. B. „500 g Kartoffeln“)</label>
+      <textarea id="nZut" required></textarea>
+      <label>Zubereitung * (ein Schritt pro Zeile)</label>
+      <textarea id="nZub" required></textarea>
+      <p class="hint">Gespeichert wird als Datei <code>recipes/&lt;titel&gt;.md</code> nach FORMAT.md direkt auf <code>main</code>. Mit Internet wird sofort committet; offline wird es lokal gepuffert und automatisch später hochgeladen.</p>
+      <button class="primary" id="nSubmit">Rezept speichern</button>
+      <div class="msg" id="nMsg"></div>
+    </form>
+  </div>
+  <div class="tab" id="tab-set">
+    <h2 style="margin:.3rem 0">Einstellungen</h2>
+    <div class="setcard">
+      <p style="margin-top:0;font-size:.9rem"><b>GitHub-Token</b>: nötig fürs Laden der Rezepte und für neue Rezepte.<br>
+      Empfohlen: <b>Fine-grained PAT</b>, Zugriff nur auf das Repo <b>Rezepte-</b>, Berechtigung <b>Contents: Read and write</b>.</p>
+      <ol>
+        <li>GitHub → Settings → Developer settings → Personal access tokens → Fine-grained tokens</li>
+        <li>„Generate new token“, Repository access: <b>Only select repositories → Rezepte-</b></li>
+        <li>Permissions → <b>Contents: Read and write</b> → Generate</li>
+      </ol>
+      <p><a class="linkreset" href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">Token bei GitHub erstellen →</a></p>
+      <input id="sToken" type="password" placeholder="github_pat_…" autocomplete="off">
+      <button id="sSave">Token lokal speichern</button>
+      <button id="sDel" class="gray">Token löschen</button>
+    </div>
+    <div class="setcard">
+      <p style="margin-top:0;font-size:.85rem;color:var(--muted)">
+        Rezepte lokal gespeichert: <b id="nCount">–</b><br>
+        Offline gepufferte Rezepte (noch nicht committet): <b id="nOutbox">0</b>
+      </p>
+      <button class="linkreset" id="syncNow">Jetzt mit dem Repo abgleichen →</button><br><br>
+      <a href="https://github.com/bardenhagennils-tech/Rezepte-" target="_blank" rel="noopener">Rezept-Repo auf GitHub</a>
+    </div>
+  </div>
+</main>
+<div id="toast"></div>
+<nav class="tabbar">
+  <button id="btnListTab" class="active" onclick="go('list')">📖<span class="lbl">Rezepte</span></button>
+  <button id="btnNewTab" onclick="go('new')">＋<span class="lbl">Neu</span></button>
+  <button id="btnSetTab" onclick="go('set')">⚙️<span class="lbl">Mehr</span></button>
+</nav>
+<script>
+const REPO = { owner: 'bardenhagennils-tech', repo: 'Rezepte-' };
+const KAT = ['Vorspeise','Hauptgericht','Nachtisch','Backen','Getränke','Salat','Suppe','Beilage','Frühstück','Soße','Sonstiges'];
+const RKEY = 'rezepte-cache-v2', TKEY = 'gh-token', OKEY = 'rezepte-outbox';
+let RECIPES = [], SHAS = {}, open = null, portions = 0, doneSteps = new Set();
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+function toast(t) { const el = $('toast'); el.textContent = t; el.style.opacity = 1; clearTimeout(el._t); el._t = setTimeout(() => el.style.opacity = 0, 2600); }
+function api(path, extra) {
+  return fetch('https://api.github.com' + path, Object.assign({
+    headers: { Authorization: 'Bearer ' + localStorage.getItem(TKEY), Accept: 'application/vnd.github+json' }
+  }, extra || {}));
+}
+
+/* ---------- Lokal: Cache + Offline-Outbox ---------- */
+function parseFrontmatter(text) {
+  const m = text.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/);
+  if (!m) return { data: {}, body: text };
+  const data = {};
+  for (const line of m[1].split(/\r?\n/)) {
+    const kv = line.match(/^(\w[\w-]*):\s*(.*)$/);
+    if (!kv) continue;
+    const key = kv[1], raw = kv[2].trim();
+    if (raw.startsWith('[') && raw.endsWith(']')) data[key] = raw.slice(1,-1).split(',').map(s => s.trim().replace(/["']/g,'')).filter(Boolean);
+    else if (/^\d+$/.test(raw)) data[key] = parseInt(raw, 10);
+    else data[key] = raw.replace(/^["']|["']$/g, '');
+  }
+  return { data, body: text.slice(m[0].length) };
+}
+function mdToRecipe(file, text) {
+  const { data, body } = parseFrontmatter(text);
+  const sec = {}; body.split(/^##\s+/m).slice(1).forEach(p => {
+    const nl = p.indexOf('\n'); sec[p.slice(0, nl).trim().toLowerCase()] = p.slice(nl + 1).trim();
+  });
+  return { id: file.replace(/\.md$/, ''), title: data.title || file.replace(/\.md$/, '').replace(/-/g, ' '),
+    kategorie: data.kategorie || 'Sonstiges', tags: data.tags || [], zeit_min: data.zeit_min || null,
+    portionen: data.portionen || 4, portionen_bezug: data.portionen_bezug || '', schwierigkeit: data.schwierigkeit || '',
+    quelle: data.quelle || '', zutaten: sec['zutaten'] || '', zubereitung: sec['zubereitung'] || '' };
+}
+function saveCache() { localStorage.setItem(RKEY, JSON.stringify({ recipes: RECIPES, shas: SHAS, t: Date.now() })); }
+function loadCache() { try { const c = JSON.parse(localStorage.getItem(RKEY) || 'null'); if (c && c.recipes) return c; } catch (e) {} return { recipes: [], shas: {} }; }
+function outbox() { try { return JSON.parse(localStorage.getItem(OKEY) || '[]'); } catch (e) { return []; } }
+function outboxSave(v) { localStorage.setItem(OKEY, JSON.stringify(v)); updateStats(); }
+
+/* ---------- Sync mit dem Repo (GitHub-API) ---------- */
+let syncing = false;
+let flushing = Promise.resolve();
+async function sync(fromUser) {
+  if (syncing) return;
+  const token = localStorage.getItem(TKEY);
+  if (!token) { $('sync').textContent = '⚠️ Kein Token – unter „Mehr → Einstellungen“ hinterlegen (Offline-Modus aktiv)'; return; }
+  syncing = true;
+  $('sync').textContent = '⏳ Synchronisiere …';
+  try {
+    const dir = await api(`/repos/${REPO.owner}/${REPO.repo}/contents/recipes?ref=main`);
+    if (!dir.ok) throw new Error('GitHub ' + dir.status + (dir.status === 401 ? ' (Token ungültig?)' : ''));
+    const entries = (await dir.json()).filter(e => e.type === 'file' && e.name.endsWith('.md'));
+    const fresh = await Promise.all(entries.filter(e => SHAS[e.path] !== e.sha).map(async e => {
+      const r = await api(`/repos/${REPO.owner}/${REPO.repo}/contents/${e.path}?ref=main`,
+        { headers: { Authorization: 'Bearer ' + token, Accept: 'application/vnd.github.raw' } });
+      return { path: e.path, sha: e.sha, text: await r.text() };
+    }));
+    if (fresh.length) {
+      const all = [];
+      for (const e of entries) {
+        const hit = fresh.find(f => f.path === e.path);
+        let text;
+        if (hit) text = hit.text;
+        else text = localStorage.getItem('md:' + e.path) || '';
+        if (!text) continue;
+        localStorage.setItem('md:' + e.path, text);
+        all.push(mdToRecipe(e.name, text));
+      }
+      RECIPES = all;
+      SHAS = {}; entries.forEach(e => SHAS[e.path] = e.sha);
+      saveCache();
+      if (open !== null) show(null);
+      else renderGrid();
+      toast('Rezepte aktualisiert ✅');
+    }
+    $('sync').textContent = '🔄 Sync: ' + new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+    flushing = flushing.then(() => flushOutbox());
+    await flushing;
+  } catch (e) {
+    $('sync').textContent = RECIPES.length ? '📴 Offline – lokale Rezepte (' + RECIPES.length + ')' : '⚠️ Sync fehlgeschlagen: ' + e.message;
+    if (fromUser) toast('Sync-Problem: ' + e.message);
+  }
+  syncing = false;
+  updateStats();
+}
+window.addEventListener('online', () => { flushing = flushing.then(() => flushOutbox()); sync(); });
+
+/* ---------- Starter ---------- */
+window.addEventListener('DOMContentLoaded', () => {
+  KAT.forEach(k => { $('fKat').insertAdjacentHTML('beforeend', `<option>${k}</option>`); $('nKat').insertAdjacentHTML('beforeend', `<option>${k}</option>`); });
+  const c = loadCache();
+  RECIPES = c.recipes; SHAS = c.shas || {};
+  renderGrid(); refreshTags(); updateStats();
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+  if (localStorage.getItem(TKEY)) sync();
+});
+function updateStats() {
+  $('nOutbox').textContent = outbox().length;
+  if (RECIPES.length) $('nCount').textContent = RECIPES.length;
+}
+$('syncNow').addEventListener('click', () => sync(true));
+
+/* ---------- Liste & Filter ---------- */
+['q'].forEach(id => $(id).addEventListener('input', () => { renderGrid(); refreshTags(); }));
+function filtered() {
+  const q = $('q').value.toLowerCase(), kat = $('fKat').value, tag = $('fTag').value, zeit = +$('fZeit').value;
+  return RECIPES.filter(r => {
+    if (kat && r.kategorie !== kat) return false;
+    if (tag && !(r.tags || []).includes(tag)) return false;
+    if (zeit && !(r.zeit_min && r.zeit_min <= zeit)) return false;
+    if (q) {
+      const hay = (r.title + ' ' + r.kategorie + ' ' + (r.tags || []).join(' ') + ' ' + r.zutaten).toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  }).sort((a, b) => a.title.localeCompare(b.title, 'de'));
+}
+function refreshTags() {
+  const list = [];
+  filtered().forEach(r => (r.tags || []).forEach(t => { if (!list.includes(t)) list.push(t); }));
+  list.sort();
+  const cur = $('fTag').value;
+  $('fTag').innerHTML = '<option value="">Tag</option>' + list.map(t => `<option${t === cur ? ' selected' : ''}>${esc(t)}</option>`).join('');
+}
+function show(i) {
+  if (i === null) {
+    open = null;
+    $('detail').style.display = 'none';
+    $('grid').style.display = 'grid';
+    renderGrid();
+    window.scrollTo(0, 0);
+    return;
+  }
+  const r = RECIPES[i];
+  open = i; portions = r.portionen || 4; doneSteps = new Set();
+  $('grid').style.display = 'none';
+  $('detail').style.display = 'block';
+  window.scrollTo(0, 0);
+  renderDetail();
+}
+function renderGrid() {
+  const rs = filtered();
+  $('stats').textContent = RECIPES.length ? `${rs.length} von ${RECIPES.length} Rezepten` : '';
+  $('grid').innerHTML = RECIPES.length === 0
+    ? `<div class="card" style="cursor:default"><p>Noch keine Rezepte lokal gespeichert.</p>
+       <p class="hint">Token hinterlegen („Mehr → Einstellungen“) und dann automatisch synchronisieren lassen.</p></div>`
+    : (rs.map(r => `<div class="card" onclick="show(${RECIPES.indexOf(r)})">
+        <h2>${esc(r.title)}</h2>
+        <div class="meta">
+          <span>${esc(r.kategorie)}</span>
+          ${r.zeit_min ? `<span>⏱ ${r.zeit_min} Min</span>` : ''}
+          ${(r.tags || []).map(t => `<span class="tag">${esc(t)}</span>`).join('')}
+        </div></div>`).join('') || `<p class="hint">Kein Rezept gefunden.</p>`);
+}
+
+/* ---------- Detail: Portionen + Koch-Modus (offline) ---------- */
+function scaleLine(line, f) {
+  return line.replace(/(\d+[.,]?\d*)(\s*(g|kg|ml|l|el|tl|prise[n]?|pkg|becher|dose[n]?|bund|zehe[n]?|stücke?|stk))?\b/gi,
+    (m, numStr, unit) => {
+      if (unit) unit = unit.replace(/^\s*/, ' ');
+      const v = parseFloat(numStr.replace(',', '.'));
+      if (isNaN(v) || v === 0) return m;
+      return String(Math.round(v * f * 100) / 100).replace('.', ',') + (unit || '');
+    });
+}
+function renderDetail() {
+  if (open === null) return;
+  const r = RECIPES[open], f = portions / (r.portionen || 4);
+  const ings = (r.zutaten || '').split('\n').map(l => l.trim()).filter(Boolean)
+    .map(l => `<li>${esc(scaleLine(l.replace(/^-\s*/, ''), f))}</li>`).join('');
+  const steps = (r.zubereitung || '').split('\n').map(s => s.trim()).filter(s => /^\d+\./.test(s));
+  $('detail').innerHTML = `
+    <button class="back" onclick="show(null)">← Alle Rezepte</button>
+    <h2>${esc(r.title)}</h2>
+    <div class="meta2">
+      <span>${esc(r.kategorie)}</span>
+      ${r.zeit_min ? `<span>⏱ ${r.zeit_min} Min</span>` : ''}
+      ${r.schwierigkeit ? `<span>🧑‍🍳 ${esc(r.schwierigkeit)}</span>` : ''}
+      ${r.quelle ? `<span>Quelle: ${esc(r.quelle)}</span>` : ''}
+    </div>
+    <div class="portions">
+      Portionen:
+      <button onclick="ch(-1)">−</button>
+      <span id="pcount">${portions}${r.portionen_bezug ? ' ' + esc(r.portionen_bezug) : ''}</span>
+      <button onclick="ch(1)">+</button>
+    </div>
+    <div class="cols">
+      <div><h3>Zutaten</h3><ul>${ings}</ul></div>
+      <div><h3>Zubereitung (Schritt antippen = erledigt)</h3>
+        <ol id="steps">${steps.map((s, idx) =>
+          `<li id="st${idx}" onclick="toggleStep(${idx})">${esc(s.replace(/^\d+\.\s*/, ''))}</li>`).join('')}</ol>
+      </div>
+    </div>`;
+}
+function ch(d) { portions = Math.max(1, portions + d); renderDetail(); }
+function toggleStep(i) {
+  doneSteps.has(i) ? doneSteps.delete(i) : doneSteps.add(i);
+  document.getElementById('st' + i).classList.toggle('cook-ok', doneSteps.has(i));
+}
+
+/* ---------- Tabs ---------- */
+function go(t) {
+  if (t === 'list' && open !== null) show(null);
+  ['list', 'new', 'set'].forEach(x => $('tab-' + x).classList.toggle('active', x === t));
+  $('btnListTab').classList.toggle('active', t === 'list');
+  $('btnNewTab').classList.toggle('active', t === 'new');
+  $('btnSetTab').classList.toggle('active', t === 'set');
+  if (t === 'set') updateStats();
+}
+
+/* ---------- Token ---------- */
+$('sSave').addEventListener('click', () => {
+  const t = $('sToken').value.trim();
+  if (!t) { toast('Kein Token eingegeben'); return; }
+  localStorage.setItem(TKEY, t); $('sToken').value = '';
+  toast('Token gespeichert – synchronisiere …');
+  sync();
+});
+$('sDel').addEventListener('click', () => { localStorage.removeItem(TKEY); toast('Token gelöscht'); location.reload(); });
+
+/* ---------- Rezept anlegen (online: Commit, offline: Puffer) ---------- */
+function slugify(title) {
+  const map = { ä: 'ae', ö: 'oe', ü: 'ue', Ä: 'ae', Ö: 'oe', Ü: 'ue', ß: 'ss' };
+  return title.replace(/[äöüÄÖÜß]/g, c => map[c]).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'rezept';
+}
+function numOrNull(v) { const n = parseInt(v, 10); return isNaN(n) ? null : n; }
+function formToRecipe() {
+  const tags = $('nTags').value.split(',').map(s => s.trim().toLowerCase()).filter(Boolean).slice(0, 5);
+  const zut = $('nZut').value.split('\n').map(s => s.trim()).filter(Boolean).map(s => s.startsWith('-') ? s : '- ' + s).join('\n');
+  const zub = $('nZub').value.split('\n').map(s => s.trim()).filter(Boolean).map((s, i) => `${i + 1}. ${s.replace(/^\d+[.)]\s*/, '')}`).join('\n');
+  let meta = `title: ${$('nTitle').value.trim()}\nkategorie: ${$('nKat').value}\ntags: [${tags.join(', ')}]\n` +
+    `zeit_min: ${numOrNull($('nZeit').value) ?? 30}\nportionen: ${numOrNull($('nPort').value) ?? 2}`;
+  const b = $('nPortBezug').value.trim(); if (b) meta += `\nportionen_bezug: ${b}`;
+  meta += `\nschwierigkeit: ${$('nDiff').value}`;
+  const q = $('nQuelleT').value.trim(); if (q) meta += `\nquelle: ${q}`;
+  return { file: 'recipes/' + slugify($('nTitle').value) + '.md',
+    md: `---\n${meta}\n---\n\n## Zutaten\n\n${zut}\n\n## Zubereitung\n\n${zub}\n`,
+    title: $('nTitle').value.trim() };
+}
+async function commitRecipe(item) {
+  const token = localStorage.getItem(TKEY);
+  if (!token) throw new Error('Kein Token hinterlegt');
+  const path = item.file;
+  const head = await api(`/repos/${REPO.owner}/${REPO.repo}/contents/${encodeURIComponent(path)}?ref=main`);
+  let sha;
+  if (head.ok) {
+    if (!item.allowOverwrite) return { needsConfirm: true };
+    sha = (await head.json()).sha;
+  } else if (head.status !== 404) throw new Error('GitHub ' + head.status);
+  const put = await api(`/repos/${REPO.owner}/${REPO.repo}/contents/${encodeURIComponent(path)}`, {
+    method: 'PUT',
+    headers: { Authorization: 'Bearer ' + token, Accept: 'application/vnd.github+json', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message: 'Neues Rezept: ' + item.title + (sha ? ' (überschrieben)' : ''),
+      content: window.btoa(unescape(encodeURIComponent(item.md))), sha, branch: 'main' })
+  });
+  if (!put.ok) throw new Error('GitHub ' + put.status + ': ' + (await put.text()).slice(0, 150));
+}
+async function flushOutbox() {
+  const box = outbox();
+  if (!box.length || !navigator.onLine || !localStorage.getItem(TKEY)) return;
+  let remaining = box.slice();
+  for (const item of box) {
+    try {
+      const r = await commitRecipe(item);
+      if (!r || !r.needsConfirm) remaining = remaining.filter(i => i !== item);
+    } catch (e) { break; }
+  }
+  if (remaining.length < box.length) {
+    outboxSave(remaining);
+    toast('Gepufferte Rezepte hochgeladen ✅');
+  }
+}
+$('nSubmit').addEventListener('click', async () => {
+  const msg = $('nMsg'); msg.className = 'msg'; msg.textContent = '';
+  if (!$('nTitle').value.trim() || !$('nZut').value.trim() || !$('nZub').value.trim()) {
+    msg.className = 'msg err'; msg.textContent = 'Titel, Zutaten und Zubereitung angeben.'; return;
+  }
+  const item = formToRecipe();
+  const btn = $('nSubmit'); btn.disabled = true; btn.textContent = 'Speichere …';
+  try {
+    if (navigator.onLine && localStorage.getItem(TKEY)) {
+      const r = await commitRecipe(item);
+      if (r && r.needsConfirm) {
+        item.allowOverwrite = confirm(`Es gibt bereits ${item.file}. Überschreiben?`);
+        if (item.allowOverwrite) await commitRecipe(item); else throw new Error('Abgebrochen');
+      }
+      msg.className = 'msg ok'; msg.textContent = '✅ Rezept committed! Beim nächsten Sync erscheint es in der App.';
+      toast('Rezept committed ✅');
+    } else {
+      const box = outbox(); box.push(item); outboxSave(box);
+      msg.className = 'msg ok'; msg.textContent = '📴 Offline gespeichert. Sobald du wieder online bist, wird es automatisch ins Repo committet.';
+      toast('Offline gepuffert, wird später hochgeladen');
+    }
+    ['nTitle','nTags','nZeit','nPort','nPortBezug','nQuelleT','nZut','nZub'].forEach(i => $(i).value = '');
+  } catch (e) {
+    if (e.message === 'Abgebrochen') { msg.className = 'msg err'; msg.textContent = 'Abgebrochen.'; }
+    else {
+      const box = outbox(); box.push(item); outboxSave(box);
+      msg.className = 'msg err'; msg.textContent = 'Gespeichert, aber Commit fehlgeschlagen (' + e.message + '). Es bleibt lokal gepuffert und wird später automatisch versucht.';
+    }
+  }
+  btn.disabled = false; btn.textContent = 'Rezept speichern';
+  updateStats();
+});
+</script>
+</body>
+</html>
