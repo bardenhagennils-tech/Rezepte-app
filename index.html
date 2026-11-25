@@ -47,7 +47,6 @@
   .shoprec .t { flex:1; cursor:pointer; }
   .shoprec button { width:2rem; height:2rem; border:none; border-radius:6px; background:var(--accent); color:#fff; cursor:pointer; font-size:1rem; }
   .shoprec .rm { background:#8a837a; }
-  .shoprec .bez { font-size:.72rem; color:var(--muted); }
   .shopitem { display:flex; align-items:flex-start; gap:.55rem; background:var(--card); border-radius:8px; padding:.55rem .7rem; margin-bottom:.4rem; font-size:.95rem; }
   .shopitem input[type=checkbox] { width:1.15rem; height:1.15rem; margin-top:.12rem; accent-color:var(--accent); }
   .shopitem .qty { color:var(--accent); font-weight:600; }
@@ -119,6 +118,14 @@
   </div>
   <div class="tab" id="tab-new">
     <h2 style="margin:.3rem 0">Neues Rezept</h2>
+    <div class="setcard" style="margin-bottom:1rem">
+      <p style="margin-top:0;font-size:.9rem"><b>🤖 KI-Import</b>: Rezept-Text einfügen oder Foto machen – die KI liest es aus und füllt das Formular. Danach prüfen und unten speichern.</p>
+      <label style="display:block;font-size:.82rem;color:var(--muted);margin:.4rem 0 .2rem">Rezept-Text (z. B. aus Instagram kopieren)</label>
+      <textarea id="iText" placeholder="Titel, Zutaten, Zubereitung …" style="width:100%;min-height:7em;border:1px solid var(--line);border-radius:8px;font-size:16px;font-family:inherit;padding:.55rem .7rem"></textarea>
+      <input id="iPic" type="file" accept="image/*" style="margin-top:.5rem;font-size:.85rem">
+      <button id="iGo" class="primary" style="width:100%;margin-top:.6rem;padding:.7rem;border:none;border-radius:10px;background:var(--accent);color:#fff;font-size:1rem">🤖 Rezept auslesen</button>
+      <div class="msg" id="iMsg"></div>
+    </div>
     <form id="fNew" onsubmit="return false">
       <label>Titel *</label>
       <input id="nTitle" required>
@@ -141,6 +148,8 @@
       <textarea id="nZut" required></textarea>
       <label>Zubereitung * (ein Schritt pro Zeile)</label>
       <textarea id="nZub" required></textarea>
+      <label>Notizen &amp; Tipps (freiwillig, auf GitHub sichtbar)</label>
+      <textarea id="nNot" placeholder="Nährwerte, Tipps, Varianten …"></textarea>
       <p class="hint">Gespeichert wird als Datei <code>recipes/&lt;titel&gt;.md</code> nach FORMAT.md direkt auf <code>main</code>. Mit Internet wird sofort committet; offline wird es lokal gepuffert und automatisch später hochgeladen.</p>
       <button class="primary" id="nSubmit">Rezept speichern</button>
       <div class="msg" id="nMsg"></div>
@@ -182,6 +191,13 @@
     </div>
     <div class="setcard">
       <p style="margin-top:0;font-size:.85rem;color:var(--muted)">
+
+    <div class="setcard">
+      <p style="margin-top:0;font-size:.9rem"><b>🤖 Mistral-API-Key</b>  – nötig für den KI-Import im „Neu“-Tab. Nur lokal auf diesem Gerät gespeichert. Erstellen unter <a class="linkreset" href="https://console.mistral.ai/api-keys/" target="_blank" rel="noopener">console.mistral.ai → API-Keys</a>.</p>
+      <input id="sMist" type="password" placeholder="Mistral-API-Key" autocomplete="off">
+      <button id="mSave">Key lokal speichern</button>
+      <button id="mDel" class="gray">Key löschen</button>
+    </div>
         Rezepte lokal gespeichert: <b id="nCount">–</b><br>
         Offline gepufferte Rezepte (noch nicht committet): <b id="nOutbox">0</b>
       </p>
@@ -200,7 +216,7 @@
 </nav>
 <script>
 const REPO = { owner: 'bardenhagennils-tech', repo: 'Rezepte-' };
-const APP_VERSION = 'v7-update';
+const APP_VERSION = 'v8-aiimport';
 document.getElementById('appVer').textContent = 'App ' + APP_VERSION;
 const KAT = ['Vorspeise','Hauptgericht','Nachtisch','Backen','Getränke','Salat','Suppe','Beilage','Frühstück','Soße','Sonstiges'];
 const RKEY = 'rezepte-cache-v2', TKEY = 'gh-token', OKEY = 'rezepte-outbox';
@@ -452,6 +468,99 @@ function randomRecipe() {
   toast('🎲 ' + pick.title);
 }
 
+/* ---------- KI-Import (Mistral API) ---------- */
+const M_KEY = 'mistral-key';
+function mistralKey() { return (localStorage.getItem(M_KEY) || '').trim(); }
+const MISTRAL_URL = 'https://api.mistral.ai/v1/chat/completions';
+const KAT_LIST = ['Vorspeise','Hauptgericht','Nachtisch','Backen','Get\u00e4nke','Salat','Suppe','Beilage','Fr\u00fchst\u00fcck','So\u00dfe','Sonstiges'];
+const AI_SYSTEM = [
+'Du bist ein Rezept-Ausleser. Extrahiere aus dem gegebenen Rezept (Text oder Foto) exakt die Daten im JSON-Format. Regeln:',
+'- Gib NUR ein JSON-Objekt zur\u00fcck, keine Erkl\u00e4rungen.',
+'- Felder: title (String), kategorie (eines von: ' + KAT_LIST.join(', ') + '), tags (Array, max 5, kleingeschrieben, ohne Umlaute, Bindestrich statt Leerzeichen, z. B. "vegetarisch", "ofen", "meal-prep"), zeit_min (Zahl, Gesamtzeit, sch\u00e4tzen falls unklar), portionen (Zahl, sch\u00e4tzen falls unklar), portionen_bezug ("Portionen" oder "St\u00fcck"), schwierigkeit ("leicht"|"mittel"|"anspruchsvoll"), quelle (String oder ""), zutaten (Array von Strings, jeder im Format "- MENGE EINHEIT ZUTAT", z. B. "- 500 g Kartoffeln", "- 1/2 tl Salz", "- 2 gro\u00dfe Zwiebeln"; Einheiten: g, kg, ml, l, el, tl, prise(n), pkg, becher, dose(n), bund, zehe(n), st\u00fccke), zubereitung (Array von Strings, ein Schritt pro Eintrag ohne Nummerierung), notizen (Array von Strings, Tipps/N\u00e4hrwerte; leer falls keine).',
+'- Inhalt 1:1 aus der Quelle \u00fcbernehmen, nichts erfinden. Unklare Mengen als "- ZUTAT (nach Geschmack)" ohne Zahl.',
+'- anteilig: Feuer/Emoji/Kommentare weg, nur das Rezept.'
+].join('\n');
+function aiMsg(txt, ok) { const el = $('iMsg'); el.className = 'msg ' + (ok ? 'ok' : 'err'); el.textContent = txt; }
+function downscaleImage(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const reader = new FileReader();
+    reader.onload = () => { img.src = reader.result; };
+    reader.onerror = () => reject(new Error('Datei konnte nicht gelesen werden'));
+    img.onerror = () => reject(new Error('Bild konnte nicht geladen werden'));
+    img.onload = () => {
+      const max = 1280;
+      let w = img.width, h = img.height;
+      if (Math.max(w, h) > max) { const f = max / Math.max(w, h); w = Math.round(w * f); h = Math.round(h * f); }
+      const c = document.createElement('canvas');
+      c.width = w; c.height = h;
+      c.getContext('2d').drawImage(img, 0, 0, w, h);
+      resolve(c.toDataURL('image/jpeg', 0.82));
+    };
+    reader.readAsDataURL(file);
+  });
+}
+async function aiImport() {
+  if (!mistralKey()) { aiMsg('Kein Mistral-API-Key hinterlegt. Unter „Mehr → Einstellungen“ speichern.', false); return; }
+  const text = $('iText').value.trim();
+  const file = $('iPic').files && $('iPic').files[0];
+  if (!text && !file) { aiMsg('Bitte Rezept-Text einfügen oder Foto auswählen.', false); return; }
+  const btn = $('iGo'); btn.disabled = true; btn.textContent = '🤖 Lese Rezept aus …';
+  aiMsg('', false); $('iMsg').className = 'msg';
+  try {
+    const content = [];
+    if (text) content.push({ type: 'text', text: text });
+    if (file) {
+      const dataUrl = await downscaleImage(file);
+      content.push({ type: 'image_url', image_url: dataUrl });
+    }
+    const body = {
+      model: file ? 'pixtral-12b-2409' : 'mistral-small-latest',
+      temperature: 0.2,
+      messages: [{ role: 'system', content: AI_SYSTEM }, { role: 'user', content: content }],
+      response_format: { type: 'json_object' }
+    };
+    const r = await fetch(MISTRAL_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + mistralKey() },
+      body: JSON.stringify(body)
+    });
+    if (!r.ok) {
+      const errText = await r.text();
+      throw new Error('Mistral-Fehler ' + r.status + ': ' + errText.slice(0, 160));
+    }
+    const data = await r.json();
+    let raw = data.choices[0].message.content.trim();
+    raw = raw.replace(/^```json\s*/i, '').replace(/^```\s*/, '').replace(/\s*```$/, '');
+    const rec = JSON.parse(raw);
+    aiFillForm(rec);
+    aiMsg('✅ Rezept ausgelesen und ins Formular übertragen. Kurz prüfen, Portionen/Zeit ggf. korrigieren, dann unten „Rezept speichern“.', true);
+  } catch (e) {
+    aiMsg('Fehler: ' + e.message + (String(e.message).includes('Failed to fetch') ? ' (Kein Netz oder Blockade der API im Browser)' : ''), false);
+  }
+  btn.disabled = false; btn.textContent = '🤖 Rezept auslesen';
+}
+function aiFillForm(rec) {
+  if (rec.title) $('nTitle').value = String(rec.title).slice(0, 80);
+  if (rec.kategorie && KAT_LIST.includes(rec.kategorie)) $('nKat').value = rec.kategorie;
+  if (Array.isArray(rec.tags)) $('nTags').value = rec.tags.slice(0, 5).join(', ');
+  if (rec.zeit_min) $('nZeit').value = parseInt(rec.zeit_min, 10) || '';
+  if (rec.portionen) $('nPort').value = parseInt(rec.portionen, 10) || '';
+  if (rec.portionen_bezug) $('nPortBezug').value = String(rec.portionen_bezug).slice(0, 30);
+  if (rec.quelle) $('nQuelleT').value = String(rec.quelle).slice(0, 80);
+  if (Array.isArray(rec.zutaten)) $('nZut').value = rec.zutaten.join('\n');
+  if (Array.isArray(rec.zubereitung)) $('nZub').value = rec.zubereitung.join('\n');
+  if (Array.isArray(rec.notizen) && rec.notizen.length) $('nNot').value = rec.notizen.join('\n');
+  if (rec.schwierigkeit) $('nDiff').value = String(rec.schwierigkeit).slice(0, 20);
+}
+$('iGo').addEventListener('click', aiImport);
+$('mSave').addEventListener('click', () => {
+  const t = $('sMist').value.trim();
+  if (!t) { toast('Kein Key eingegeben'); return; }
+  localStorage.setItem(M_KEY, t); $('sMist').value = '';
+  toast('Mistral-Key gespeichert');
+});
+$('mDel').addEventListener('click', () => { localStorage.removeItem(M_KEY); toast('Mistral-Key gelöscht'); });
 /* ---------- Wochenplan ---------- */
 const PLAN_KEY = 'rezepte-plan-v1';
 const DAYS = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
@@ -656,8 +765,9 @@ function formToRecipe() {
   const b = $('nPortBezug').value.trim(); if (b) meta += `\nportionen_bezug: ${b}`;
   meta += `\nschwierigkeit: ${$('nDiff').value}`;
   const q = $('nQuelleT').value.trim(); if (q) meta += `\nquelle: ${q}`;
+  const nv = $('nNot').value.trim(); const mdNotiz = nv ? '\n## Notizen\n\n' + nv : '';
   return { file: 'recipes/' + slugify($('nTitle').value) + '.md',
-    md: `---\n${meta}\n---\n\n## Zutaten\n\n${zut}\n\n## Zubereitung\n\n${zub}\n`,
+    md: `---\n${meta}\n---\n\n## Zutaten\n\n${zut}\n\n## Zubereitung\n\n${zub}\n${mdNotiz}\n`,
     title: $('nTitle').value.trim() };
 }
 async function commitRecipe(item) {
@@ -714,7 +824,7 @@ $('nSubmit').addEventListener('click', async () => {
       msg.className = 'msg ok'; msg.textContent = '📴 Offline gespeichert. Sobald du wieder online bist, wird es automatisch ins Repo committet.';
       toast('Offline gepuffert, wird später hochgeladen');
     }
-    ['nTitle','nTags','nZeit','nPort','nPortBezug','nQuelleT','nZut','nZub'].forEach(i => $(i).value = '');
+    ['nTitle','nTags','nZeit','nPort','nPortBezug','nQuelleT','nZut','nZub','nNot'].forEach(i => $(i).value = '');
   } catch (e) {
     if (e.message === 'Abgebrochen') { msg.className = 'msg err'; msg.textContent = 'Abgebrochen.'; }
     else {
