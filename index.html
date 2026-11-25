@@ -200,7 +200,7 @@
 </nav>
 <script>
 const REPO = { owner: 'bardenhagennils-tech', repo: 'Rezepte-' };
-const APP_VERSION = 'v6-plan';
+const APP_VERSION = 'v7-update';
 document.getElementById('appVer').textContent = 'App ' + APP_VERSION;
 const KAT = ['Vorspeise','Hauptgericht','Nachtisch','Backen','Getränke','Salat','Suppe','Beilage','Frühstück','Soße','Sonstiges'];
 const RKEY = 'rezepte-cache-v2', TKEY = 'gh-token', OKEY = 'rezepte-outbox';
@@ -299,7 +299,24 @@ window.addEventListener('DOMContentLoaded', () => {
   const c = loadCache();
   RECIPES = c.recipes; SHAS = c.shas || {};
   renderGrid(); refreshTags(); updateStats();
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+    // Wenn ein neuer Service Worker die Kontrolle übernimmt (App-Update), einmal neu laden
+    if (navigator.serviceWorker.controller) {
+      let reloaded = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (reloaded) return;
+        reloaded = true;
+        location.reload();
+      });
+    }
+    // Update-Check auch bei jedem Wiederkehren in die App
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        navigator.serviceWorker.getRegistration().then(r => r && r.update()).catch(() => {});
+      }
+    });
+  }
   if (localStorage.getItem(TKEY)) sync();
 });
 function updateStats() {
