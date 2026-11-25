@@ -109,6 +109,7 @@
     <button id="btnRandom" title="Zufallsrezept" onclick="randomRecipe()">🎲</button>
   </div>
   <div id="sync" onclick="sync(true)">–</div>
+  <div id="appVer" style="font-size:.7rem;color:rgba(255,255,255,.55);margin-top:.15rem"></div>
 </header>
 <main>
   <div class="tab active" id="tab-list">
@@ -189,6 +190,8 @@
 </nav>
 <script>
 const REPO = { owner: 'bardenhagennils-tech', repo: 'Rezepte-' };
+const APP_VERSION = 'v5-shop';
+document.getElementById('appVer').textContent = 'App ' + APP_VERSION;
 const KAT = ['Vorspeise','Hauptgericht','Nachtisch','Backen','Getränke','Salat','Suppe','Beilage','Frühstück','Soße','Sonstiges'];
 const RKEY = 'rezepte-cache-v2', TKEY = 'gh-token', OKEY = 'rezepte-outbox';
 let RECIPES = [], SHAS = {}, open = null, portions = 0, doneSteps = new Set();
