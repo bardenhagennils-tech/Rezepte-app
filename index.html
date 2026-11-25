@@ -146,6 +146,15 @@
       <div class="msg" id="nMsg"></div>
     </form>
   </div>
+  <div class="tab" id="tab-plan">
+    <h2 style="margin:.3rem 0">📅 Wochenplan</h2>
+    <div id="planRows"></div>
+    <div style="display:flex;gap:.5rem;margin-top:.8rem">
+      <button id="planToShop" style="flex:1;padding:.7rem;border:none;border-radius:10px;background:var(--accent);color:#fff;font-size:.95rem;cursor:pointer">🛒 Plan auf die Einkaufsliste</button>
+      <button id="planClear" style="padding:.7rem .9rem;border:none;border-radius:10px;background:#8a837a;color:#fff;font-size:.95rem;cursor:pointer">Plan leeren</button>
+    </div>
+    <p class="hint" style="margin-top:.7rem">Der Plan wird lokal auf diesem Gerät gespeichert. „Plan auf die Einkaufsliste“ addiert die Zutaten aller geplanten Tage (bei mehreren Tagen pro Rezept werden die Portionen summiert).</p>
+  </div>
   <div class="tab" id="tab-shop">
     <h2 style="margin:.3rem 0">🛒 Einkaufsliste</h2>
     <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;margin:.4rem 0 .8rem">
@@ -185,12 +194,13 @@
 <nav class="tabbar">
   <button id="btnListTab" class="active" onclick="go('list')">📖<span class="lbl">Rezepte</span></button>
   <button id="btnNewTab" onclick="go('new')">＋<span class="lbl">Neu</span></button>
+  <button id="btnPlanTab" onclick="go('plan')">📅<span class="lbl">Plan</span></button>
   <button id="btnShopTab" onclick="go('shop')">🛒<span class="lbl">Liste</span></button>
   <button id="btnSetTab" onclick="go('set')">⚙️<span class="lbl">Mehr</span></button>
 </nav>
 <script>
 const REPO = { owner: 'bardenhagennils-tech', repo: 'Rezepte-' };
-const APP_VERSION = 'v5-shop';
+const APP_VERSION = 'v6-plan';
 document.getElementById('appVer').textContent = 'App ' + APP_VERSION;
 const KAT = ['Vorspeise','Hauptgericht','Nachtisch','Backen','Getränke','Salat','Suppe','Beilage','Frühstück','Soße','Sonstiges'];
 const RKEY = 'rezepte-cache-v2', TKEY = 'gh-token', OKEY = 'rezepte-outbox';
@@ -407,13 +417,15 @@ function toggleStep(i) {
 /* ---------- Tabs ---------- */
 function go(t) {
   if (t === 'list' && open !== null) show(null);
-  ['list', 'new', 'shop', 'set'].forEach(x => $('tab-' + x).classList.toggle('active', x === t));
+  ['list', 'new', 'plan', 'shop', 'set'].forEach(x => $('tab-' + x).classList.toggle('active', x === t));
   $('btnListTab').classList.toggle('active', t === 'list');
   $('btnNewTab').classList.toggle('active', t === 'new');
   $('btnShopTab').classList.toggle('active', t === 'shop');
   $('btnSetTab').classList.toggle('active', t === 'set');
   if (t === 'set') updateStats();
+  $('btnPlanTab').classList.toggle('active', t === 'plan');
   if (t === 'shop') renderShop();
+  if (t === 'plan') renderPlan();
 }
 function randomRecipe() {
   const rs = filtered();
@@ -423,6 +435,54 @@ function randomRecipe() {
   toast('🎲 ' + pick.title);
 }
 
+/* ---------- Wochenplan ---------- */
+const PLAN_KEY = 'rezepte-plan-v1';
+const DAYS = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
+function planMap() { try { return JSON.parse(localStorage.getItem(PLAN_KEY) || '{}'); } catch (e) { return {}; } }
+function savePlan(m) { localStorage.setItem(PLAN_KEY, JSON.stringify(m)); }
+function planSel(d, id) {
+  const m = planMap();
+  if (id) m[d] = { id: id }; else delete m[d];
+  savePlan(m);
+}
+function renderPlan() {
+  const m = planMap();
+  if (!RECIPES.length) {
+    $('planRows').innerHTML = '<div class="empty">Noch keine Rezepte geladen. Erst mit dem Repo synchronisieren.</div>';
+    return;
+  }
+  $('planRows').innerHTML = DAYS.map((d, i) => {
+    const cur = m[i] ? m[i].id : '';
+    const opts = RECIPES.map(r => '<option value="' + r.id + '"' + (r.id === cur ? ' selected' : '') + '>' + esc(r.title) + '</option>').join('');
+    return '<div class="shoprec"><b style="min-width:2rem">' + d + '</b>' +
+      '<select style="flex:1;padding:.45rem .5rem;border:1px solid var(--line);border-radius:8px;font-size:14px;background:#fff" onchange="planSel(' + i + ',this.value)">' +
+      '<option value="">– frei –</option>' + opts + '</select></div>';
+  }).join('');
+}
+function planToShop() {
+  const m = planMap();
+  const days = Object.keys(m);
+  if (!days.length) { toast('Plan ist leer – erst ein Rezept eintragen'); return; }
+  const selM = selMap();
+  let n = 0;
+  days.forEach(d => {
+    const r = RECIPES.find(x => x.id === m[d].id);
+    if (!r) return;
+    selM[r.id] = (selM[r.id] || 0) + (r.portionen || 4);
+    n++;
+  });
+  saveSel(selM);
+  toast('🛒 ' + n + ' Tage auf die Einkaufsliste');
+  renderGrid();
+  go('shop');
+}
+$('planToShop').addEventListener('click', planToShop);
+$('planClear').addEventListener('click', () => {
+  if (!confirm('Wochenplan komplett leeren?')) return;
+  savePlan({});
+  renderPlan();
+  toast('Plan geleert');
+});
 /* ---------- Notizen-Renderer ---------- */
 function notesToHtml(text) {
   let out = '', inList = false;
