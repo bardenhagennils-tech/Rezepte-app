@@ -193,8 +193,8 @@
       <p style="margin-top:0;font-size:.85rem;color:var(--muted)">
 
     <div class="setcard">
-      <p style="margin-top:0;font-size:.9rem"><b>🤖 Mistral-API-Key</b>  – nötig für den KI-Import im „Neu“-Tab. Nur lokal auf diesem Gerät gespeichert. Erstellen unter <a class="linkreset" href="https://console.mistral.ai/api-keys/" target="_blank" rel="noopener">console.mistral.ai → API-Keys</a>.</p>
-      <input id="sMist" type="password" placeholder="Mistral-API-Key" autocomplete="off">
+      <p style="margin-top:0;font-size:.9rem"><b>🤖 Gemini-API-Key</b> – nötig für den KI-Import im „Neu“-Tab. Nur lokal auf diesem Gerät gespeichert. Kostenloser Key unter <a class="linkreset" href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com → API-Keys (Free Tier)</a>.</p>
+      <input id="sMist" type="password" placeholder="Gemini-API-Key (AIza…)" autocomplete="off">
       <button id="mSave">Key lokal speichern</button>
       <button id="mDel" class="gray">Key löschen</button>
     </div>
@@ -216,7 +216,7 @@
 </nav>
 <script>
 const REPO = { owner: 'bardenhagennils-tech', repo: 'Rezepte-' };
-const APP_VERSION = 'v8-aiimport';
+const APP_VERSION = 'v9-geminiimport';
 document.getElementById('appVer').textContent = 'App ' + APP_VERSION;
 const KAT = ['Vorspeise','Hauptgericht','Nachtisch','Backen','Getränke','Salat','Suppe','Beilage','Frühstück','Soße','Sonstiges'];
 const RKEY = 'rezepte-cache-v2', TKEY = 'gh-token', OKEY = 'rezepte-outbox';
@@ -468,10 +468,11 @@ function randomRecipe() {
   toast('🎲 ' + pick.title);
 }
 
-/* ---------- KI-Import (Mistral API) ---------- */
-const M_KEY = 'mistral-key';
+/* ---------- KI-Import (Gemini API, Free Tier) ---------- */
+const M_KEY = 'gemini-key';
 function mistralKey() { return (localStorage.getItem(M_KEY) || '').trim(); }
-const MISTRAL_URL = 'https://api.mistral.ai/v1/chat/completions';
+const GEMINI_MODEL = 'gemini-2.5-flash';
+const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/' + GEMINI_MODEL + ':generateContent';
 const KAT_LIST = ['Vorspeise','Hauptgericht','Nachtisch','Backen','Get\u00e4nke','Salat','Suppe','Beilage','Fr\u00fchst\u00fcck','So\u00dfe','Sonstiges'];
 const AI_SYSTEM = [
 'Du bist ein Rezept-Ausleser. Extrahiere aus dem gegebenen Rezept (Text oder Foto) exakt die Daten im JSON-Format. Regeln:',
@@ -501,36 +502,37 @@ function downscaleImage(file) {
   });
 }
 async function aiImport() {
-  if (!mistralKey()) { aiMsg('Kein Mistral-API-Key hinterlegt. Unter „Mehr → Einstellungen“ speichern.', false); return; }
+  if (!mistralKey()) { aiMsg('Kein Gemini-API-Key hinterlegt. Kostenlos erstellen: aistudio.google.com/apikey, dann unter „Mehr → Einstellungen“ speichern.', false); return; }
   const text = $('iText').value.trim();
   const file = $('iPic').files && $('iPic').files[0];
   if (!text && !file) { aiMsg('Bitte Rezept-Text einfügen oder Foto auswählen.', false); return; }
   const btn = $('iGo'); btn.disabled = true; btn.textContent = '🤖 Lese Rezept aus …';
   aiMsg('', false); $('iMsg').className = 'msg';
   try {
-    const content = [];
-    if (text) content.push({ type: 'text', text: text });
+    const parts = [];
+    if (text) parts.push({ text: text });
     if (file) {
       const dataUrl = await downscaleImage(file);
-      content.push({ type: 'image_url', image_url: dataUrl });
+      parts.push({ inline_data: { mime_type: 'image/jpeg', data: dataUrl.split(',')[1] } });
     }
     const body = {
-      model: file ? 'pixtral-12b-2409' : 'mistral-small-latest',
-      temperature: 0.2,
-      messages: [{ role: 'system', content: AI_SYSTEM }, { role: 'user', content: content }],
-      response_format: { type: 'json_object' }
+      systemInstruction: { parts: [{ text: AI_SYSTEM }] },
+      contents: [{ role: 'user', parts: parts }],
+      generationConfig: { temperature: 0.2, responseMimeType: 'application/json' }
     };
-    const r = await fetch(MISTRAL_URL, {
+    const r = await fetch(GEMINI_URL + '?key=' + encodeURIComponent(mistralKey()), {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + mistralKey() },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
     });
     if (!r.ok) {
       const errText = await r.text();
-      throw new Error('Mistral-Fehler ' + r.status + ': ' + errText.slice(0, 160));
+      throw new Error('Gemini-Fehler ' + r.status + ': ' + errText.slice(0, 160));
     }
     const data = await r.json();
-    let raw = data.choices[0].message.content.trim();
+    const cand = data.candidates && data.candidates[0];
+    if (!cand || !cand.content || !cand.content.parts) throw new Error('Gemini lieferte keine Antwort (Key oder Free-Tier-Limit prüfen)');
+    let raw = cand.content.parts.map((p: any) => p.text || '').join('').trim();
     raw = raw.replace(/^```json\s*/i, '').replace(/^```\s*/, '').replace(/\s*```$/, '');
     const rec = JSON.parse(raw);
     aiFillForm(rec);
@@ -558,9 +560,9 @@ $('mSave').addEventListener('click', () => {
   const t = $('sMist').value.trim();
   if (!t) { toast('Kein Key eingegeben'); return; }
   localStorage.setItem(M_KEY, t); $('sMist').value = '';
-  toast('Mistral-Key gespeichert');
+  toast('Gemini-Key gespeichert');
 });
-$('mDel').addEventListener('click', () => { localStorage.removeItem(M_KEY); toast('Mistral-Key gelöscht'); });
+$('mDel').addEventListener('click', () => { localStorage.removeItem(M_KEY); toast('Gemini-Key gelöscht'); });
 /* ---------- Wochenplan ---------- */
 const PLAN_KEY = 'rezepte-plan-v1';
 const DAYS = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
