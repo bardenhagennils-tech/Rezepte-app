@@ -126,10 +126,13 @@
   <div class="tab" id="tab-new">
     <h2 style="margin:.3rem 0">Neues Rezept</h2>
     <div class="setcard" style="margin-bottom:1rem">
-      <p style="margin-top:0;font-size:.9rem"><b>🤖 KI-Import</b>: Rezept-Text einfügen oder Foto machen – die KI liest es aus und füllt das Formular. Danach prüfen und unten speichern.</p>
+      <p style="margin-top:0;font-size:.9rem"><b>🤖 KI-Import</b>: Rezept-Text einfügen, mehrere Screenshots auswählen oder einen Link einfügen (z. B. Dr. Oetker oder Instagram) – die KI liest es aus und füllt das Formular. Kombinieren ist erlaubt. Danach prüfen und unten speichern.</p>
       <label style="display:block;font-size:.82rem;color:var(--muted);margin:.4rem 0 .2rem">Rezept-Text (z. B. aus Instagram kopieren)</label>
       <textarea id="iText" placeholder="Titel, Zutaten, Zubereitung …" style="width:100%;min-height:7em;border:1px solid var(--line);border-radius:8px;font-size:16px;font-family:inherit;padding:.55rem .7rem"></textarea>
-      <input id="iPic" type="file" accept="image/*" style="margin-top:.5rem;font-size:.85rem">
+            <label style="display:block;font-size:.82rem;color:var(--muted);margin:.5rem 0 .2rem">Link (optional, z. B. Dr. Oetker oder Instagram)</label>
+      <input id="iUrl" type="url" inputmode="url" placeholder="https:// …" style="width:100%;border:1px solid var(--line);border-radius:8px;font-size:16px;padding:.55rem .7rem">
+      <label style="display:block;font-size:.82rem;color:var(--muted);margin:.5rem 0 .2rem">Fotos/Screenshots (mehrere möglich)</label>
+      <input id="iPic" type="file" accept="image/*" multiple style="font-size:.85rem">
       <button id="iGo" class="primary" style="width:100%;margin-top:.6rem;padding:.7rem;border:none;border-radius:10px;background:var(--accent);color:#fff;font-size:1rem">🤖 Rezept auslesen</button>
       <div class="msg" id="iMsg"></div>
     </div>
@@ -222,7 +225,7 @@
 </nav>
 <script>
 const REPO = { owner: 'bardenhagennils-tech', repo: 'Rezepte-' };
-const APP_VERSION = 'v10-plansync';
+const APP_VERSION = 'v11-aimulti';
 document.getElementById('appVer').textContent = 'App ' + APP_VERSION;
 const KAT = ['Vorspeise','Hauptgericht','Nachtisch','Backen','Getränke','Salat','Suppe','Beilage','Frühstück','Soße','Sonstiges'];
 const RKEY = 'rezepte-cache-v2', TKEY = 'gh-token', OKEY = 'rezepte-outbox';
@@ -486,7 +489,8 @@ const AI_SYSTEM = [
 '- Gib NUR ein JSON-Objekt zur\u00fcck, keine Erkl\u00e4rungen.',
 '- Felder: title (String), kategorie (eines von: ' + KAT_LIST.join(', ') + '), tags (Array, max 5, kleingeschrieben, ohne Umlaute, Bindestrich statt Leerzeichen, z. B. "vegetarisch", "ofen", "meal-prep"), zeit_min (Zahl, Gesamtzeit, sch\u00e4tzen falls unklar), portionen (Zahl, sch\u00e4tzen falls unklar), portionen_bezug ("Portionen" oder "St\u00fcck"), schwierigkeit ("leicht"|"mittel"|"anspruchsvoll"), quelle (String oder ""), zutaten (Array von Strings, jeder im Format "- MENGE EINHEIT ZUTAT", z. B. "- 500 g Kartoffeln", "- 1/2 tl Salz", "- 2 gro\u00dfe Zwiebeln"; Einheiten: g, kg, ml, l, el, tl, prise(n), pkg, becher, dose(n), bund, zehe(n), st\u00fccke), zubereitung (Array von Strings, ein Schritt pro Eintrag ohne Nummerierung), notizen (Array von Strings, Tipps/N\u00e4hrwerte; leer falls keine).',
 '- Inhalt 1:1 aus der Quelle \u00fcbernehmen, nichts erfinden. Unklare Mengen als "- ZUTAT (nach Geschmack)" ohne Zahl.',
-'- anteilig: Feuer/Emoji/Kommentare weg, nur das Rezept.'
+'- anteilig: Feuer/Emoji/Kommentare weg, nur das Rezept.',
+'- Bei mehreren Fotos oder Text+Fotos stammt alles aus derselben Quelle: zu EINEM Rezept zusammenführen (z. B. Zutaten aus dem einen Bild, Zubereitung aus dem anderen). Bei einer URL zuerst den Seiteninhalt abrufen und nur daraus extrahieren, nichts erfinden.'
 ].join('\n');
 function aiMsg(txt, ok) { const el = $('iMsg'); el.className = 'msg ' + (ok ? 'ok' : 'err'); el.textContent = txt; }
 function downscaleImage(file) {
@@ -511,15 +515,17 @@ function downscaleImage(file) {
 async function aiImport() {
   if (!mistralKey()) { aiMsg('Kein Gemini-API-Key hinterlegt. Kostenlos erstellen: aistudio.google.com/apikey, dann unter „Mehr → Einstellungen“ speichern.', false); return; }
   const text = $('iText').value.trim();
-  const file = $('iPic').files && $('iPic').files[0];
-  if (!text && !file) { aiMsg('Bitte Rezept-Text einfügen oder Foto auswählen.', false); return; }
+  const url = $('iUrl').value.trim();
+  const files = Array.from($('iPic').files || []);
+  if (!text && !url && !files.length) { aiMsg('Bitte Rezept-Text einfügen, Screenshots auswählen oder einen Link angeben.', false); return; }
   const btn = $('iGo'); btn.disabled = true; btn.textContent = '🤖 Lese Rezept aus …';
   aiMsg('', false); $('iMsg').className = 'msg';
   try {
     const parts = [];
     if (text) parts.push({ text: text });
-    if (file) {
-      const dataUrl = await downscaleImage(file);
+    if (url) parts.push({ text: 'Rufe den Inhalt dieser URL ab und lies daraus das Rezept aus: ' + url });
+    for (const f of files) {
+      const dataUrl = await downscaleImage(f);
       parts.push({ inline_data: { mime_type: 'image/jpeg', data: dataUrl.split(',')[1] } });
     }
     const body = {
@@ -527,6 +533,7 @@ async function aiImport() {
       contents: [{ role: 'user', parts: parts }],
       generationConfig: { temperature: 0.2, responseMimeType: 'application/json' }
     };
+    if (url) body.tools = [{ url_context: {} }];
     const r = await fetch(GEMINI_URL + '?key=' + encodeURIComponent(mistralKey()), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -542,6 +549,7 @@ async function aiImport() {
     let raw = cand.content.parts.map(p => p.text || '').join('').trim();
     raw = raw.replace(/^```json\s*/i, '').replace(/^```\s*/, '').replace(/\s*```$/, '');
     const rec = JSON.parse(raw);
+    if (url && !rec.quelle) rec.quelle = url;
     aiFillForm(rec);
     aiMsg('✅ Rezept ausgelesen und ins Formular übertragen. Kurz prüfen, Portionen/Zeit ggf. korrigieren, dann unten „Rezept speichern“.', true);
   } catch (e) {
