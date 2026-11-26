@@ -190,14 +190,13 @@
       <button id="sDel" class="gray">Token löschen</button>
     </div>
     <div class="setcard">
-      <p style="margin-top:0;font-size:.85rem;color:var(--muted)">
-
-    <div class="setcard">
       <p style="margin-top:0;font-size:.9rem"><b>🤖 Gemini-API-Key</b> – nötig für den KI-Import im „Neu“-Tab. Nur lokal auf diesem Gerät gespeichert. Kostenloser Key unter <a class="linkreset" href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com → API-Keys (Free Tier)</a>.</p>
       <input id="sMist" type="password" placeholder="Gemini-API-Key (AIza…)" autocomplete="off">
       <button id="mSave">Key lokal speichern</button>
       <button id="mDel" class="gray">Key löschen</button>
     </div>
+    <div class="setcard">
+      <p style="margin-top:0;font-size:.85rem;color:var(--muted)">
         Rezepte lokal gespeichert: <b id="nCount">–</b><br>
         Offline gepufferte Rezepte (noch nicht committet): <b id="nOutbox">0</b>
       </p>
@@ -216,7 +215,7 @@
 </nav>
 <script>
 const REPO = { owner: 'bardenhagennils-tech', repo: 'Rezepte-' };
-const APP_VERSION = 'v9-geminiimport';
+const APP_VERSION = 'v9-gemini2';
 document.getElementById('appVer').textContent = 'App ' + APP_VERSION;
 const KAT = ['Vorspeise','Hauptgericht','Nachtisch','Backen','Getränke','Salat','Suppe','Beilage','Frühstück','Soße','Sonstiges'];
 const RKEY = 'rezepte-cache-v2', TKEY = 'gh-token', OKEY = 'rezepte-outbox';
@@ -532,7 +531,7 @@ async function aiImport() {
     const data = await r.json();
     const cand = data.candidates && data.candidates[0];
     if (!cand || !cand.content || !cand.content.parts) throw new Error('Gemini lieferte keine Antwort (Key oder Free-Tier-Limit prüfen)');
-    let raw = cand.content.parts.map((p: any) => p.text || '').join('').trim();
+    let raw = cand.content.parts.map(p => p.text || '').join('').trim();
     raw = raw.replace(/^```json\s*/i, '').replace(/^```\s*/, '').replace(/\s*```$/, '');
     const rec = JSON.parse(raw);
     aiFillForm(rec);
