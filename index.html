@@ -154,6 +154,9 @@
       <input id="nPortBezug" placeholder="Portionen oder Stück">
       <label>Quelle (freiwillig)</label>
       <input id="nQuelleT">
+      <label>Rezept-Foto (optional, wird als assets/&lt;name&gt;.jpg ins Repo hochgeladen)</label>
+      <input id="nPic" type="file" accept="image/*">
+      <img id="nPicPrev" style="display:none;max-height:160px;border-radius:8px;margin-top:.4rem">
       <label>Zutaten * (eine pro Zeile, z. B. „500 g Kartoffeln“)</label>
       <textarea id="nZut" required></textarea>
       <label>Zubereitung * (ein Schritt pro Zeile)</label>
@@ -225,11 +228,11 @@
 </nav>
 <script>
 const REPO = { owner: 'bardenhagennils-tech', repo: 'Rezepte-' };
-const APP_VERSION = 'v11-aimulti3';
+const APP_VERSION = 'v12-shareimages';
 document.getElementById('appVer').textContent = 'App ' + APP_VERSION;
 const KAT = ['Vorspeise','Hauptgericht','Nachtisch','Backen','Getränke','Salat','Suppe','Beilage','Frühstück','Soße','Sonstiges'];
 const RKEY = 'rezepte-cache-v2', TKEY = 'gh-token', OKEY = 'rezepte-outbox';
-let RECIPES = [], SHAS = {}, open = null, portions = 0, doneSteps = new Set();
+let RECIPES = [], SHAS = {}, open = null, portions = 0, doneSteps = new Set(), newImage = null;
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
@@ -264,6 +267,11 @@ function mdToRecipe(file, text) {
     kategorie: data.kategorie || 'Sonstiges', tags: data.tags || [], zeit_min: data.zeit_min || null,
     portionen: data.portionen || 4, portionen_bezug: data.portionen_bezug || '', schwierigkeit: data.schwierigkeit || '',
     quelle: data.quelle || '', bild: data.bild || '', zutaten: sec['zutaten'] || '', zubereitung: sec['zubereitung'] || '', notizen: sec['notizen'] || '' };
+}
+function bildUrl(b) {
+  if (!b) return '';
+  if (/^https?:/i.test(b)) return b;
+  return 'https://raw.githubusercontent.com/' + REPO.owner + '/' + REPO.repo + '/main/' + String(b).replace(/^\//, '');
 }
 function saveCache() { localStorage.setItem(RKEY, JSON.stringify({ recipes: RECIPES, shas: SHAS, t: Date.now() })); }
 function loadCache() { try { const c = JSON.parse(localStorage.getItem(RKEY) || 'null'); if (c && c.recipes) return c; } catch (e) {} return { recipes: [], shas: {} }; }
@@ -302,6 +310,7 @@ async function sync(fromUser) {
       RECIPES = all;
       SHAS = {}; entries.forEach(e => SHAS[e.path] = e.sha);
       saveCache();
+      RECIPES.forEach(r => { if (r.bild) fetch(bildUrl(r.bild), { mode: 'no-cors' }).catch(() => {}); });
       if (open !== null) show(null);
       else renderGrid();
       toast('Rezepte aktualisiert ✅');
@@ -343,6 +352,19 @@ window.addEventListener('DOMContentLoaded', () => {
       }
     });
   }
+  // Android „Teilen“ → Rezepte-App: Text/Link in den KI-Import übernehmen
+  try {
+    const sp = new URLSearchParams(location.search);
+    const sText = sp.get('text') || '', sUrl = sp.get('url') || '', sTitle = sp.get('title') || '';
+    if (sText || sUrl || sTitle) {
+      go('new');
+      $('iText').value = ((sTitle ? sTitle + '\n' : '') + sText).trim();
+      if (/^https?:/i.test(sUrl)) $('iUrl').value = sUrl;
+      if (mistralKey()) aiImport();
+      else aiMsg('Geteilter Inhalt eingefügt. Erst Gemini-Key unter „Mehr → Einstellungen“ hinterlegen, dann „Rezept auslesen“.', true);
+      history.replaceState(null, '', location.pathname);
+    }
+  } catch (e) {}
   if (localStorage.getItem(TKEY)) sync();
 });
 function updateStats() {
@@ -400,7 +422,7 @@ function renderGrid() {
        <p class="hint">Token hinterlegen („Mehr → Einstellungen“) und dann automatisch synchronisieren lassen.</p></div>`
     : (rs.map(r => `<div class="card" onclick="show(${RECIPES.indexOf(r)})">
         <button class="cardlist${sel(r.id)!==null?' on':''}" onclick="event.stopPropagation();toggleSel('${r.id}')" title="Auf die Einkaufsliste">🛒</button>
-        ${r.bild ? `<img class="thumb" src="${esc(r.bild)}" alt="" loading="lazy">` : ''}
+        ${r.bild ? `<img class="thumb" src="${esc(bildUrl(r.bild))}" alt="" loading="lazy">` : ''}
         <h2>${esc(r.title)}</h2>
         <div class="meta">
           <span>${esc(r.kategorie)}</span>
@@ -434,7 +456,7 @@ function renderDetail() {
       ${r.schwierigkeit ? `<span>🧑‍🍳 ${esc(r.schwierigkeit)}</span>` : ''}
       ${r.quelle ? `<span>Quelle: ${esc(r.quelle)}</span>` : ''}
     </div>
-    ${r.bild ? `<img class="detail-img" src="${esc(r.bild)}" alt="${esc(r.title)}">` : ''}
+    ${r.bild ? `<img class="detail-img" src="${esc(bildUrl(r.bild))}" alt="${esc(r.title)}">` : ''}
     <div class="portions">
       Portionen:
       <button onclick="ch(-1)">−</button>
@@ -492,6 +514,12 @@ const AI_SYSTEM = [
 '- anteilig: Feuer/Emoji/Kommentare weg, nur das Rezept.',
 '- Bei mehreren Fotos oder Text+Fotos stammt alles aus derselben Quelle: zu EINEM Rezept zusammenführen (z. B. Zutaten aus dem einen Bild, Zubereitung aus dem anderen). Bei einer URL zuerst den Seiteninhalt abrufen und nur daraus extrahieren, nichts erfinden.'
 ].join('\n');
+function setNewImage(dataUrl) {
+  newImage = dataUrl || null;
+  const p = $('nPicPrev');
+  if (newImage) { p.src = newImage; p.style.display = 'block'; }
+  else p.style.display = 'none';
+}
 function aiMsg(txt, ok) { const el = $('iMsg'); el.className = 'msg ' + (ok ? 'ok' : 'err'); el.textContent = txt; }
 function downscaleImage(file) {
   return new Promise((resolve, reject) => {
@@ -524,8 +552,10 @@ async function aiImport() {
     const parts = [];
     if (text) parts.push({ text: text });
     if (url) parts.push({ text: 'Rufe den Inhalt dieser URL ab und lies daraus das Rezept aus: ' + url });
+    let firstImg = null;
     for (const f of files) {
       const dataUrl = await downscaleImage(f);
+      if (!firstImg) firstImg = dataUrl;
       parts.push({ inline_data: { mime_type: 'image/jpeg', data: dataUrl.split(',')[1] } });
     }
     const body = {
@@ -556,6 +586,7 @@ async function aiImport() {
     const rec = JSON.parse(raw);
     if (url && !rec.quelle) rec.quelle = url;
     aiFillForm(rec);
+    if (firstImg) setNewImage(firstImg);
     aiMsg('✅ Rezept ausgelesen und ins Formular übertragen. Kurz prüfen, Portionen/Zeit ggf. korrigieren, dann unten „Rezept speichern“.', true);
   } catch (e) {
     aiMsg('Fehler: ' + e.message + (String(e.message).includes('Failed to fetch') ? ' (Kein Netz oder Blockade der API im Browser)' : ''), false);
@@ -576,6 +607,11 @@ function aiFillForm(rec) {
   if (rec.schwierigkeit) $('nDiff').value = String(rec.schwierigkeit).slice(0, 20);
 }
 $('iGo').addEventListener('click', aiImport);
+$('nPic').addEventListener('change', async () => {
+  const f = $('nPic').files[0];
+  if (!f) return;
+  try { setNewImage(await downscaleImage(f)); } catch (e) { toast('Foto konnte nicht gelesen werden'); }
+});
 $('mSave').addEventListener('click', () => {
   const t = $('sMist').value.trim();
   if (!t) { toast('Kein Key eingegeben'); return; }
@@ -840,13 +876,30 @@ function formToRecipe() {
   meta += `\nschwierigkeit: ${$('nDiff').value}`;
   const q = $('nQuelleT').value.trim(); if (q) meta += `\nquelle: ${q}`;
   const nv = $('nNot').value.trim(); const mdNotiz = nv ? '\n## Notizen\n\n' + nv : '';
-  return { file: 'recipes/' + slugify($('nTitle').value) + '.md',
+  const slug = slugify($('nTitle').value);
+  const imgPath = 'assets/' + slug + '.jpg';
+  if (newImage) meta += `\nbild: ${imgPath}`;
+  return { file: 'recipes/' + slug + '.md',
     md: `---\n${meta}\n---\n\n## Zutaten\n\n${zut}\n\n## Zubereitung\n\n${zub}\n${mdNotiz}\n`,
-    title: $('nTitle').value.trim() };
+    title: $('nTitle').value.trim(),
+    img: newImage || undefined };
 }
 async function commitRecipe(item) {
   const token = localStorage.getItem(TKEY);
   if (!token) throw new Error('Kein Token hinterlegt');
+  if (item.img) {
+    const imgPath = item.file.replace('recipes/', 'assets/').replace(/\.md$/, '.jpg');
+    const ih = await api('/repos/' + REPO.owner + '/' + REPO.repo + '/contents/' + encodeURIComponent(imgPath) + '?ref=main');
+    let isha;
+    if (ih.ok) isha = (await ih.json()).sha;
+    else if (ih.status !== 404) throw new Error('Foto-Check GitHub ' + ih.status);
+    const iput = await api('/repos/' + REPO.owner + '/' + REPO.repo + '/contents/' + encodeURIComponent(imgPath), {
+      method: 'PUT',
+      headers: { Authorization: 'Bearer ' + token, Accept: 'application/vnd.github+json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: 'Rezeptfoto: ' + item.title, content: item.img.split(',')[1], sha: isha, branch: 'main' })
+    });
+    if (!iput.ok) throw new Error('Foto-Upload GitHub ' + iput.status + ': ' + (await iput.text()).slice(0, 120));
+  }
   const path = item.file;
   const head = await api(`/repos/${REPO.owner}/${REPO.repo}/contents/${encodeURIComponent(path)}?ref=main`);
   let sha;
@@ -899,6 +952,7 @@ $('nSubmit').addEventListener('click', async () => {
       toast('Offline gepuffert, wird später hochgeladen');
     }
     ['nTitle','nTags','nZeit','nPort','nPortBezug','nQuelleT','nZut','nZub','nNot'].forEach(i => $(i).value = '');
+    $('nPic').value = ''; setNewImage(null);
   } catch (e) {
     if (e.message === 'Abgebrochen') { msg.className = 'msg err'; msg.textContent = 'Abgebrochen.'; }
     else {
