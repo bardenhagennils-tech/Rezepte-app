@@ -47,6 +47,13 @@
   .shoprec .t { flex:1; cursor:pointer; }
   .shoprec button { width:2rem; height:2rem; border:none; border-radius:6px; background:var(--accent); color:#fff; cursor:pointer; font-size:1rem; }
   .shoprec .rm { background:#8a837a; }
+  .planday { background:var(--card); border-radius:10px; padding:.55rem .7rem; margin-bottom:.5rem; box-shadow:0 1px 4px rgba(0,0,0,.06); }
+  .planhead { display:flex; align-items:center; justify-content:space-between; }
+  .planhead button { background:#f0ebe4; border:none; border-radius:8px; padding:.3rem .55rem; cursor:pointer; font-size:.85rem; }
+  .planrow { display:flex; align-items:center; gap:.4rem; margin-top:.4rem; }
+  .planrow input[type=time] { width:6.4rem; flex:none; padding:.4rem .3rem; border:1px solid var(--line); border-radius:8px; font-size:14px; background:#fff; }
+  .planrow select { flex:1; min-width:0; padding:.45rem .4rem; border:1px solid var(--line); border-radius:8px; font-size:14px; background:#fff; }
+  .planrow button { width:2rem; height:2rem; flex:none; border:none; border-radius:6px; background:#8a837a; color:#fff; cursor:pointer; }
   .shopitem { display:flex; align-items:flex-start; gap:.55rem; background:var(--card); border-radius:8px; padding:.55rem .7rem; margin-bottom:.4rem; font-size:.95rem; }
   .shopitem input[type=checkbox] { width:1.15rem; height:1.15rem; margin-top:.12rem; accent-color:var(--accent); }
   .shopitem .qty { color:var(--accent); font-weight:600; }
@@ -162,7 +169,7 @@
       <button id="planToShop" style="flex:1;padding:.7rem;border:none;border-radius:10px;background:var(--accent);color:#fff;font-size:.95rem;cursor:pointer">🛒 Plan auf die Einkaufsliste</button>
       <button id="planClear" style="padding:.7rem .9rem;border:none;border-radius:10px;background:#8a837a;color:#fff;font-size:.95rem;cursor:pointer">Plan leeren</button>
     </div>
-    <p class="hint" style="margin-top:.7rem">Der Plan wird lokal auf diesem Gerät gespeichert. „Plan auf die Einkaufsliste“ addiert die Zutaten aller geplanten Tage (bei mehreren Tagen pro Rezept werden die Portionen summiert).</p>
+    <p class="hint" style="margin-top:.7rem">Der Plan wird über das Rezept-Repo (Datei plan/wochenplan.json) mit allen Nutzern synchronisiert, die einen GitHub-Zugang zum Repo haben: Änderungen werden beim Öffnen des Plan-Tabs automatisch hoch- und runtergeladen. „Plan auf die Einkaufsliste“ addiert die Zutaten aller geplanten Gerichte.</p>
   </div>
   <div class="tab" id="tab-shop">
     <h2 style="margin:.3rem 0">🛒 Einkaufsliste</h2>
@@ -215,7 +222,7 @@
 </nav>
 <script>
 const REPO = { owner: 'bardenhagennils-tech', repo: 'Rezepte-' };
-const APP_VERSION = 'v9-gemini2';
+const APP_VERSION = 'v10-plansync';
 document.getElementById('appVer').textContent = 'App ' + APP_VERSION;
 const KAT = ['Vorspeise','Hauptgericht','Nachtisch','Backen','Getränke','Salat','Suppe','Beilage','Frühstück','Soße','Sonstiges'];
 const RKEY = 'rezepte-cache-v2', TKEY = 'gh-token', OKEY = 'rezepte-outbox';
@@ -305,6 +312,7 @@ async function sync(fromUser) {
   }
   syncing = false;
   updateStats();
+  if (!planDirty) planPull();
 }
 window.addEventListener('online', () => { flushing = flushing.then(() => flushOutbox()); sync(); });
 
@@ -457,7 +465,7 @@ function go(t) {
   if (t === 'set') updateStats();
   $('btnPlanTab').classList.toggle('active', t === 'plan');
   if (t === 'shop') renderShop();
-  if (t === 'plan') renderPlan();
+  if (t === 'plan') { renderPlan(); planSyncShow(); }
 }
 function randomRecipe() {
   const rs = filtered();
@@ -562,52 +570,104 @@ $('mSave').addEventListener('click', () => {
   toast('Gemini-Key gespeichert');
 });
 $('mDel').addEventListener('click', () => { localStorage.removeItem(M_KEY); toast('Gemini-Key gelöscht'); });
-/* ---------- Wochenplan ---------- */
-const PLAN_KEY = 'rezepte-plan-v1';
+/* ---------- Wochenplan (v2: mehrere Gerichte/Tag + Uhrzeit + Repo-Sync) ---------- */
+const PLAN_KEY = 'rezepte-plan-v2';
+const PLAN_FILE = 'plan/wochenplan.json';
 const DAYS = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
-function planMap() { try { return JSON.parse(localStorage.getItem(PLAN_KEY) || '{}'); } catch (e) { return {}; } }
-function savePlan(m) { localStorage.setItem(PLAN_KEY, JSON.stringify(m)); }
-function planSel(d, id) {
-  const m = planMap();
-  if (id) m[d] = { id: id }; else delete m[d];
-  savePlan(m);
+let planDirty = false, planBusy = false;
+function planData() {
+  try { const p = JSON.parse(localStorage.getItem(PLAN_KEY) || 'null'); if (p && Array.isArray(p.entries)) return p; } catch (e) {}
+  let entries = [];
+  try {
+    const old = JSON.parse(localStorage.getItem('rezepte-plan-v1') || '{}');
+    Object.keys(old).forEach(d => { if (old[d] && old[d].id) entries.push({ day: +d, time: '', id: old[d].id }); });
+  } catch (e) {}
+  return { updatedAt: 0, entries: entries };
 }
+function planSaveLocal(p) { p.updatedAt = Date.now(); localStorage.setItem(PLAN_KEY, JSON.stringify(p)); planDirty = true; }
+function planAdd(d) { const p = planData(); p.entries.push({ day: d, time: '', id: RECIPES[0] ? RECIPES[0].id : '' }); planSaveLocal(p); renderPlan(); }
+function planTime(i, v) { const p = planData(); if (p.entries[i]) { p.entries[i].time = v; planSaveLocal(p); } }
+function planSel(i, v) { const p = planData(); if (p.entries[i]) { p.entries[i].id = v; planSaveLocal(p); } }
+function planDel(i) { const p = planData(); p.entries.splice(i, 1); planSaveLocal(p); renderPlan(); }
 function renderPlan() {
-  const m = planMap();
-  if (!RECIPES.length) {
-    $('planRows').innerHTML = '<div class="empty">Noch keine Rezepte geladen. Erst mit dem Repo synchronisieren.</div>';
-    return;
-  }
+  const p = planData();
+  if (p.updatedAt === 0 && p.entries.length) planSaveLocal(p);
+  if (!RECIPES.length) { $('planRows').innerHTML = '<div class="empty">Noch keine Rezepte geladen. Erst mit dem Repo synchronisieren.</div>'; return; }
   $('planRows').innerHTML = DAYS.map((d, i) => {
-    const cur = m[i] ? m[i].id : '';
-    const opts = RECIPES.map(r => '<option value="' + r.id + '"' + (r.id === cur ? ' selected' : '') + '>' + esc(r.title) + '</option>').join('');
-    return '<div class="shoprec"><b style="min-width:2rem">' + d + '</b>' +
-      '<select style="flex:1;padding:.45rem .5rem;border:1px solid var(--line);border-radius:8px;font-size:14px;background:#fff" onchange="planSel(' + i + ',this.value)">' +
-      '<option value="">– frei –</option>' + opts + '</select></div>';
+    const idxs = p.entries.map((e, idx) => ({ e: e, idx: idx })).filter(x => x.e.day === i)
+      .sort((a, b) => (a.e.time || '').localeCompare(b.e.time || ''));
+    const rows = idxs.map(x => {
+      const opts = RECIPES.map(r => '<option value="' + r.id + '"' + (r.id === x.e.id ? ' selected' : '') + '>' + esc(r.title) + '</option>').join('');
+      return '<div class="planrow">' +
+        '<input type="time" value="' + esc(x.e.time || '') + '" onchange="planTime(' + x.idx + ',this.value)">' +
+        '<select onchange="planSel(' + x.idx + ',this.value)"><option value="">– Rezept wählen –</option>' + opts + '</select>' +
+        '<button onclick="planDel(' + x.idx + ')" title="Entfernen">✕</button></div>';
+    }).join('');
+    return '<div class="planday"><div class="planhead"><b>' + d + '</b>' +
+      '<button onclick="planAdd(' + i + ')">＋ Gericht</button></div>' +
+      (rows || '<div class="empty">frei</div>') + '</div>';
   }).join('');
 }
+async function planPull() {
+  if (planBusy || planDirty) return;
+  const token = localStorage.getItem(TKEY);
+  if (!token || !navigator.onLine) return;
+  planBusy = true;
+  try {
+    const r = await api('/repos/' + REPO.owner + '/' + REPO.repo + '/contents/' + PLAN_FILE + '?ref=main',
+      { headers: { Accept: 'application/vnd.github.raw' } });
+    if (r.ok) {
+      const remote = JSON.parse(await r.text());
+      if (Array.isArray(remote.entries) && (remote.updatedAt || 0) > (planData().updatedAt || 0)) {
+        localStorage.setItem(PLAN_KEY, JSON.stringify(remote));
+        if ($('tab-plan').classList.contains('active')) renderPlan();
+      }
+    }
+  } catch (e) {}
+  planBusy = false;
+}
+async function planPush() {
+  if (planBusy) return;
+  const token = localStorage.getItem(TKEY);
+  if (!token || !navigator.onLine) return;
+  planBusy = true;
+  try {
+    const p = planData(); p.updatedAt = Date.now();
+    const head = await api('/repos/' + REPO.owner + '/' + REPO.repo + '/contents/' + PLAN_FILE + '?ref=main');
+    let sha;
+    if (head.ok) sha = (await head.json()).sha;
+    else if (head.status !== 404) throw new Error('GitHub ' + head.status);
+    const put = await api('/repos/' + REPO.owner + '/' + REPO.repo + '/contents/' + PLAN_FILE, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: 'Wochenplan aktualisiert', content: b64(JSON.stringify(p)), sha: sha, branch: 'main' })
+    });
+    if (put.ok) { localStorage.setItem(PLAN_KEY, JSON.stringify(p)); planDirty = false; }
+  } catch (e) {}
+  planBusy = false;
+}
+function planSyncShow() { (planDirty ? planPush() : planPull()).then(renderPlan); }
 function planToShop() {
-  const m = planMap();
-  const days = Object.keys(m);
-  if (!days.length) { toast('Plan ist leer – erst ein Rezept eintragen'); return; }
+  const p = planData();
+  const used = p.entries.filter(e => e.id && RECIPES.some(r => r.id === e.id));
+  if (!used.length) { toast('Plan ist leer – erst ein Rezept eintragen'); return; }
   const selM = selMap();
   let n = 0;
-  days.forEach(d => {
-    const r = RECIPES.find(x => x.id === m[d].id);
-    if (!r) return;
+  used.forEach(e => {
+    const r = RECIPES.find(x => x.id === e.id);
     selM[r.id] = (selM[r.id] || 0) + (r.portionen || 4);
     n++;
   });
   saveSel(selM);
-  toast('🛒 ' + n + ' Tage auf die Einkaufsliste');
+  toast('🛒 ' + n + ' Gerichte auf die Einkaufsliste');
   renderGrid();
   go('shop');
 }
 $('planToShop').addEventListener('click', planToShop);
 $('planClear').addEventListener('click', () => {
   if (!confirm('Wochenplan komplett leeren?')) return;
-  savePlan({});
-  renderPlan();
+  const p = planData(); p.entries = []; planSaveLocal(p);
+  renderPlan(); planPush();
   toast('Plan geleert');
 });
 /* ---------- Notizen-Renderer ---------- */
