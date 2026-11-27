@@ -41,6 +41,8 @@
   .card { position:relative; }
   .cardlist { position:absolute; top:.55rem; right:.55rem; background:#f0ebe4; border:none; border-radius:8px; padding:.3rem .5rem; cursor:pointer; font-size:1rem; opacity:.5; }
   .cardlist.on { opacity:1; background:#ffe9c9; box-shadow:0 0 0 2px var(--accent); }
+  .cardfav { position:absolute; top:.55rem; right:2.7rem; background:#f0ebe4; border:none; border-radius:8px; padding:.3rem .5rem; cursor:pointer; font-size:1rem; opacity:.5; }
+  .cardfav.on { opacity:1; }
   .dshop { display:block; width:100%; margin-top:.6rem; padding:.7rem; border:none; border-radius:10px; background:var(--accent); color:#fff; font-size:.95rem; cursor:pointer; }
   .dshop.on { background:#1e7a34; }
   .shoprec { display:flex; align-items:center; gap:.5rem; background:var(--card); border-radius:10px; padding:.55rem .8rem; margin-bottom:.45rem; box-shadow:0 1px 4px rgba(0,0,0,.06); font-size:.95rem; }
@@ -113,6 +115,7 @@
       <option value="zeit">Sortierung: Zeit</option>
     </select>
     <button id="btnRandom" title="Zufallsrezept" onclick="randomRecipe()">🎲</button>
+    <button id="btnFav" title="Nur Favoriten zeigen" onclick="toggleFavFilter()">🤍</button>
   </div>
   <div id="sync" onclick="sync(true)">–</div>
   <div id="appVer" style="font-size:.7rem;color:rgba(255,255,255,.55);margin-top:.15rem"></div>
@@ -243,7 +246,7 @@
 </nav>
 <script>
 const REPO = { owner: 'bardenhagennils-tech', repo: 'Rezepte-' };
-const APP_VERSION = 'v15-planweeks';
+const APP_VERSION = 'v16-favoriten';
 document.getElementById('appVer').textContent = 'App ' + APP_VERSION;
 const KAT = ['Vorspeise','Hauptgericht','Nachtisch','Backen','Getränke','Salat','Suppe','Beilage','Frühstück','Soße','Sonstiges'];
 const RKEY = 'rezepte-cache-v2', TKEY = 'gh-token', OKEY = 'rezepte-outbox';
@@ -340,6 +343,7 @@ async function sync(fromUser) {
   syncing = false;
   updateStats();
   if (!planDirty) planPull();
+  if (!listDirty) listPull();
 }
 window.addEventListener('online', () => { flushing = flushing.then(() => flushOutbox()); sync(); });
 
@@ -395,6 +399,7 @@ function filtered() {
   const rs = RECIPES.filter(r => {
     if (kat && r.kategorie !== kat) return false;
     if (tag && !(r.tags || []).includes(tag)) return false;
+    if (favOnly && !isFav(r.id)) return false;
     if (zeit && !(r.zeit_min && r.zeit_min <= zeit)) return false;
     if (q) {
       const hay = (r.title + ' ' + r.kategorie + ' ' + (r.tags || []).join(' ') + ' ' + r.zutaten).toLowerCase();
@@ -405,6 +410,25 @@ function filtered() {
   if ($('fSort').value === 'zeit') rs.sort((a, b) => ((a.zeit_min ?? 9999) - (b.zeit_min ?? 9999)) || a.title.localeCompare(b.title, 'de'));
   else rs.sort((a, b) => a.title.localeCompare(b.title, 'de'));
   return rs;
+}
+const FAV_KEY = 'rezepte-fav-v1';
+let favOnly = false;
+function favArr() { try { return JSON.parse(localStorage.getItem(FAV_KEY) || '[]'); } catch (e) { return []; } }
+function isFav(id) { return favArr().includes(id); }
+function toggleFav(id) {
+  const f = favArr();
+  const i = f.indexOf(id);
+  if (i >= 0) f.splice(i, 1); else f.push(id);
+  localStorage.setItem(FAV_KEY, JSON.stringify(f));
+  renderGrid();
+  if (open !== null) renderDetail();
+  toast(i >= 0 ? 'Aus den Favoriten entfernt' : '🧡 Zu den Favoriten');
+}
+function toggleFavFilter() {
+  favOnly = !favOnly;
+  $('btnFav').textContent = favOnly ? '🧡' : '🤍';
+  $('btnFav').title = favOnly ? 'Alle Rezepte zeigen' : 'Nur Favoriten zeigen';
+  renderGrid();
 }
 function refreshTags() {
   const list = [];
@@ -436,6 +460,7 @@ function renderGrid() {
     ? `<div class="card" style="cursor:default"><p>Noch keine Rezepte lokal gespeichert.</p>
        <p class="hint">Token hinterlegen („Mehr → Einstellungen“) und dann automatisch synchronisieren lassen.</p></div>`
     : (rs.map(r => `<div class="card" onclick="show(${RECIPES.indexOf(r)})">
+        <button class="cardfav${isFav(r.id) ? ' on' : ''}" onclick="event.stopPropagation();toggleFav('${r.id}')" title="Favorit">${isFav(r.id) ? "🧡" : "🤍"}</button>
         <button class="cardlist${sel(r.id)!==null?' on':''}" onclick="event.stopPropagation();toggleSel('${r.id}')" title="Auf die Einkaufsliste">🛒</button>
         ${r.bild ? `<img class="thumb" src="${esc(bildUrl(r.bild))}" alt="" loading="lazy">` : ''}
         <h2>${esc(r.title)}</h2>
@@ -479,6 +504,7 @@ function renderDetail() {
       <button onclick="ch(1)">+</button>
     </div>
     <button class="dshop${sel(r.id)!==null?' on':''}" onclick="toggleSelDetail()">${sel(r.id)!==null ? '🛒 Auf der Einkaufsliste ✓ (antippen zum Entfernen)' : '🛒 Zutaten auf die Einkaufsliste'}</button>
+    <button class="back" style="width:100%;margin-top:.4rem" onclick="toggleFav(RECIPES[open].id)">${isFav(r.id) ? "🧡 Aus Favoriten entfernen" : "🤍 Zu Favoriten"}</button>
     <button class="back" style="width:100%;margin-top:.4rem" onclick="editOpen(${open})">✏️ Rezept bearbeiten</button>
     <div class="cols">
       <div><h3>Zutaten</h3><ul>${ings}</ul></div>
@@ -505,12 +531,14 @@ function go(t) {
   $('btnSetTab').classList.toggle('active', t === 'set');
   if (t === 'set') updateStats();
   $('btnPlanTab').classList.toggle('active', t === 'plan');
-  if (t === 'shop') renderShop();
+  if (t === 'shop') { renderShop(); listSyncShow(); }
   if (t === 'plan') { renderPlan(); planSyncShow(); }
 }
 function randomRecipe() {
-  const rs = filtered();
+  let rs = filtered();
   if (!rs.length) { toast('Kein Rezept für diese Filter gefunden'); return; }
+  const favs = rs.filter(r => isFav(r.id));
+  if (favs.length && Math.random() < 0.7) rs = favs;
   const pick = rs[Math.floor(Math.random() * rs.length)];
   show(RECIPES.indexOf(pick));
   toast('🎲 ' + pick.title);
@@ -757,6 +785,51 @@ async function planPush() {
   } catch (e) {}
   planBusy = false;
 }
+function listData() {
+  try { return JSON.parse(localStorage.getItem('rezepte-list-v1') || 'null') || { updatedAt: 0, sel: {}, chk: [] }; } catch (e) { return { updatedAt: 0, sel: {}, chk: [] }; }
+}
+async function listPull() {
+  if (listBusy || listDirty) return;
+  const token = localStorage.getItem(TKEY);
+  if (!token || !navigator.onLine) return;
+  listBusy = true;
+  try {
+    const r = await api('/repos/' + REPO.owner + '/' + REPO.repo + '/contents/' + LIST_FILE + '?ref=main',
+      { headers: { Accept: 'application/vnd.github.raw' } });
+    if (r.ok) {
+      const remote = JSON.parse(await r.text());
+      if ((remote.updatedAt || 0) > (listData().updatedAt || 0)) {
+        localStorage.setItem(SEL_KEY, JSON.stringify(remote.sel || {}));
+        localStorage.setItem(CHK_KEY, JSON.stringify(remote.chk || []));
+        localStorage.setItem('rezepte-list-v1', JSON.stringify(remote));
+        if ($('tab-shop').classList.contains('active')) renderShop();
+        renderGrid();
+      }
+    }
+  } catch (e) {}
+  listBusy = false;
+}
+async function listPush() {
+  if (listBusy) return;
+  const token = localStorage.getItem(TKEY);
+  if (!token || !navigator.onLine) return;
+  listBusy = true;
+  try {
+    const d = { updatedAt: Date.now(), sel: selMap(), chk: chkArr() };
+    const head = await api('/repos/' + REPO.owner + '/' + REPO.repo + '/contents/' + LIST_FILE + '?ref=main');
+    let sha;
+    if (head.ok) sha = (await head.json()).sha;
+    else if (head.status !== 404) throw new Error('GitHub ' + head.status);
+    const put = await api('/repos/' + REPO.owner + '/' + REPO.repo + '/contents/' + LIST_FILE, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: 'Einkaufsliste aktualisiert', content: b64(JSON.stringify(d)), sha: sha, branch: 'main' })
+    });
+    if (put.ok) { localStorage.setItem('rezepte-list-v1', JSON.stringify(d)); listDirty = false; }
+  } catch (e) {}
+  listBusy = false;
+}
+function listSyncShow() { (listDirty ? listPush() : listPull()).then(renderShop); }
 function planSyncShow() { (planDirty ? planPush() : planPull()).then(renderPlan); }
 function planToShop() {
   const es = (planData().plans[planWeek] || []).filter(e => e.id && RECIPES.some(r => r.id === e.id));
@@ -853,11 +926,18 @@ function notesToHtml(text) {
 /* ---------- Einkaufsliste ---------- */
 const SEL_KEY = 'rezepte-einkauf-sel-v1';
 const CHK_KEY = 'rezepte-einkauf-chk-v1';
+const LIST_FILE = 'plan/einkaufsliste.json';
+let listDirty = false, listBusy = false, listPushT = null;
+function listMarkDirty() {
+  listDirty = true;
+  clearTimeout(listPushT);
+  listPushT = setTimeout(listPush, 1200);
+}
 function sel(id) { const m = selMap(); return id in m ? m[id] : null; }
 function selMap() { try { return JSON.parse(localStorage.getItem(SEL_KEY) || '{}'); } catch (e) { return {}; } }
-function saveSel(m) { localStorage.setItem(SEL_KEY, JSON.stringify(m)); }
+function saveSel(m) { localStorage.setItem(SEL_KEY, JSON.stringify(m)); listMarkDirty(); }
 function chkArr() { try { return JSON.parse(localStorage.getItem(CHK_KEY) || '[]'); } catch (e) { return []; } }
-function saveChk(a) { localStorage.setItem(CHK_KEY, JSON.stringify(a)); }
+function saveChk(a) { localStorage.setItem(CHK_KEY, JSON.stringify(a)); listMarkDirty(); }
 function toggleSel(id) {
   const m = selMap();
   const removed = id in m;
