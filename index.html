@@ -230,6 +230,11 @@
       <button id="mDel" class="gray">Key löschen</button>
     </div>
     <div class="setcard">
+      <p style="margin-top:0;font-size:.9rem"><b>Profil</b> – dein Name erscheint bei synchronisierten Änderungen (Einkaufsliste, Wochenplan). Pro Gerät gespeichert.</p>
+      <input id="sName" placeholder="Dein Name" maxlength="30">
+      <button id="sNameSave">Namen speichern</button>
+    </div>
+    <div class="setcard">
       <p style="margin-top:0;font-size:.85rem;color:var(--muted)">
         Rezepte lokal gespeichert: <b id="nCount">–</b><br>
         Offline gepufferte Rezepte (noch nicht committet): <b id="nOutbox">0</b>
@@ -249,7 +254,7 @@
 </nav>
 <script>
 const REPO = { owner: 'bardenhagennils-tech', repo: 'Rezepte-' };
-const APP_VERSION = 'v17-timer';
+const APP_VERSION = 'v18-user';
 document.getElementById('appVer').textContent = 'App ' + APP_VERSION;
 const KAT = ['Vorspeise','Hauptgericht','Nachtisch','Backen','Getränke','Salat','Suppe','Beilage','Frühstück','Soße','Sonstiges'];
 const RKEY = 'rezepte-cache-v2', TKEY = 'gh-token', OKEY = 'rezepte-outbox';
@@ -387,6 +392,7 @@ window.addEventListener('DOMContentLoaded', () => {
       history.replaceState(null, '', location.pathname);
     }
   } catch (e) {}
+  userInit();
   if (localStorage.getItem(TKEY)) sync();
 });
 function updateStats() {
@@ -413,6 +419,25 @@ function filtered() {
   if ($('fSort').value === 'zeit') rs.sort((a, b) => ((a.zeit_min ?? 9999) - (b.zeit_min ?? 9999)) || a.title.localeCompare(b.title, 'de'));
   else rs.sort((a, b) => a.title.localeCompare(b.title, 'de'));
   return rs;
+}
+const USER_KEY = 'rezepte-user-v1';
+function userGet() { try { return JSON.parse(localStorage.getItem(USER_KEY) || 'null') || { name: '' }; } catch (e) { return { name: '' }; } }
+function userSet(name) {
+  const u = userGet();
+  u.name = String(name || '').trim().slice(0, 30);
+  if (!u.since) u.since = Date.now();
+  localStorage.setItem(USER_KEY, JSON.stringify(u));
+}
+function userName() { return userGet().name || 'Gast'; }
+function userInit() {
+  const u = userGet();
+  if (!u.name && !u.asked) {
+    u.asked = true;
+    localStorage.setItem(USER_KEY, JSON.stringify(u));
+    const n = prompt('Wer kocht? Dein Name (Abbrechen = Gast):');
+    userSet(n || '');
+    if ((n || '').trim()) toast('Hi ' + userName() + '! 👋');
+  }
 }
 const FAV_KEY = 'rezepte-fav-v1';
 let favOnly = false;
@@ -571,7 +596,7 @@ function go(t) {
   $('btnNewTab').classList.toggle('active', t === 'new');
   $('btnShopTab').classList.toggle('active', t === 'shop');
   $('btnSetTab').classList.toggle('active', t === 'set');
-  if (t === 'set') updateStats();
+  if (t === 'set') { updateStats(); userFillSettings(); }
   $('btnPlanTab').classList.toggle('active', t === 'plan');
   if (t === 'shop') { renderShop(); listSyncShow(); }
   if (t === 'plan') { renderPlan(); planSyncShow(); }
@@ -813,7 +838,7 @@ async function planPush() {
   if (!token || !navigator.onLine) return;
   planBusy = true;
   try {
-    const p = planData(); p.updatedAt = Date.now();
+    const p = planData(); p.updatedAt = Date.now(); p.by = userName();
     const head = await api('/repos/' + REPO.owner + '/' + REPO.repo + '/contents/' + PLAN_FILE + '?ref=main');
     let sha;
     if (head.ok) sha = (await head.json()).sha;
@@ -846,6 +871,7 @@ async function listPull() {
         localStorage.setItem('rezepte-list-v1', JSON.stringify(remote));
         if ($('tab-shop').classList.contains('active')) renderShop();
         renderGrid();
+        toast('Liste aktualisiert' + (remote.by ? ' von ' + remote.by : ''));
       }
     }
   } catch (e) {}
@@ -857,7 +883,7 @@ async function listPush() {
   if (!token || !navigator.onLine) return;
   listBusy = true;
   try {
-    const d = { updatedAt: Date.now(), sel: selMap(), chk: chkArr() };
+    const d = { updatedAt: Date.now(), by: userName(), sel: selMap(), chk: chkArr() };
     const head = await api('/repos/' + REPO.owner + '/' + REPO.repo + '/contents/' + LIST_FILE + '?ref=main');
     let sha;
     if (head.ok) sha = (await head.json()).sha;
@@ -1098,6 +1124,12 @@ $('sSave').addEventListener('click', () => {
   sync();
 });
 $('sDel').addEventListener('click', () => { localStorage.removeItem(TKEY); toast('Token gelöscht'); location.reload(); });
+function userFillSettings() { const s = $('sName'); if (s) s.value = userGet().name || ''; }
+$('sNameSave').addEventListener('click', () => {
+  userSet($('sName').value);
+  $('sName').value = userGet().name;
+  toast(userGet().name ? 'Profil gespeichert: ' + userGet().name : 'Anonym (Gast) gespeichert');
+});
 
 /* ---------- Rezept anlegen (online: Commit, offline: Puffer) ---------- */
 function slugify(title) {
