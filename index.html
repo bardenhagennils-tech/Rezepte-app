@@ -177,12 +177,20 @@
   </div>
   <div class="tab" id="tab-plan">
     <h2 style="margin:.3rem 0">📅 Wochenplan</h2>
+    <div style="display:flex;align-items:center;gap:.4rem;margin:.4rem 0 .6rem">
+      <button id="planPrev" style="width:2.4rem;height:2.4rem;border:1px solid var(--line);border-radius:8px;background:#fff;font-size:1.1rem;cursor:pointer">‹</button>
+      <b id="planWeekLabel" style="flex:1;text-align:center;font-size:.95rem"></b>
+      <button id="planToday" style="padding:.5rem .7rem;border:1px solid var(--line);border-radius:8px;background:#fff;font-size:.85rem;cursor:pointer">Heute</button>
+      <button id="planNext" style="width:2.4rem;height:2.4rem;border:1px solid var(--line);border-radius:8px;background:#fff;font-size:1.1rem;cursor:pointer">›</button>
+    </div>
+    <div id="planMsg" class="msg" style="margin-bottom:.4rem"></div>
     <div id="planRows"></div>
     <div style="display:flex;gap:.5rem;margin-top:.8rem">
       <button id="planToShop" style="flex:1;padding:.7rem;border:none;border-radius:10px;background:var(--accent);color:#fff;font-size:.95rem;cursor:pointer">🛒 Plan auf die Einkaufsliste</button>
       <button id="planClear" style="padding:.7rem .9rem;border:none;border-radius:10px;background:#8a837a;color:#fff;font-size:.95rem;cursor:pointer">Plan leeren</button>
     </div>
-    <p class="hint" style="margin-top:.7rem">Der Plan wird über das Rezept-Repo (Datei plan/wochenplan.json) mit allen Nutzern synchronisiert, die einen GitHub-Zugang zum Repo haben: Änderungen werden beim Öffnen des Plan-Tabs automatisch hoch- und runtergeladen. „Plan auf die Einkaufsliste“ addiert die Zutaten aller geplanten Gerichte.</p>
+    <button id="planAI" style="width:100%;margin-top:.5rem;padding:.7rem;border:1px solid var(--line);border-radius:10px;background:#fff;font-size:.95rem;cursor:pointer">🤖 Woche planen (KI)</button>
+    <p class="hint" style="margin-top:.7rem">Der Plan wird über das Rezept-Repo (Datei plan/wochenplan.json) mit allen Nutzern synchronisiert, die einen GitHub-Zugang zum Repo haben: Änderungen werden beim Öffnen des Plan-Tabs automatisch hoch- und runtergeladen. „Plan auf die Einkaufsliste“ addiert die Zutaten aller Gerichte der angezeigten Woche. Mit ‹ › zwischen Kalenderwochen blättern, „🤖 Woche planen“ füllt die Woche per KI.</p>
   </div>
   <div class="tab" id="tab-shop">
     <h2 style="margin:.3rem 0">🛒 Einkaufsliste</h2>
@@ -235,7 +243,7 @@
 </nav>
 <script>
 const REPO = { owner: 'bardenhagennils-tech', repo: 'Rezepte-' };
-const APP_VERSION = 'v14-edit';
+const APP_VERSION = 'v15-planweeks';
 document.getElementById('appVer').textContent = 'App ' + APP_VERSION;
 const KAT = ['Vorspeise','Hauptgericht','Nachtisch','Backen','Getränke','Salat','Suppe','Beilage','Frühstück','Soße','Sonstiges'];
 const RKEY = 'rezepte-cache-v2', TKEY = 'gh-token', OKEY = 'rezepte-outbox';
@@ -636,31 +644,68 @@ $('mSave').addEventListener('click', () => {
   toast('Gemini-Key gespeichert');
 });
 $('mDel').addEventListener('click', () => { localStorage.removeItem(M_KEY); toast('Gemini-Key gelöscht'); });
-/* ---------- Wochenplan (v2: mehrere Gerichte/Tag + Uhrzeit + Repo-Sync) ---------- */
-const PLAN_KEY = 'rezepte-plan-v2';
+/* ---------- Wochenplan (v3: Kalenderwochen + KI-Wochenplaner) ---------- */
+const PLAN_KEY = 'rezepte-plan-v3';
 const PLAN_FILE = 'plan/wochenplan.json';
 const DAYS = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
-let planDirty = false, planBusy = false;
-function planData() {
-  try { const p = JSON.parse(localStorage.getItem(PLAN_KEY) || 'null'); if (p && Array.isArray(p.entries)) return p; } catch (e) {}
-  let entries = [];
-  try {
-    const old = JSON.parse(localStorage.getItem('rezepte-plan-v1') || '{}');
-    Object.keys(old).forEach(d => { if (old[d] && old[d].id) entries.push({ day: +d, time: '', id: old[d].id }); });
-  } catch (e) {}
-  return { updatedAt: 0, entries: entries };
+let planDirty = false, planBusy = false, planWeek = weekKey(new Date());
+function weekKey(d) {
+  const dt = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const day = dt.getUTCDay() || 7;
+  dt.setUTCDate(dt.getUTCDate() + 4 - day);
+  const y0 = new Date(Date.UTC(dt.getUTCFullYear(), 0, 1));
+  const wk = Math.ceil(((dt - y0) / 86400000 + 1) / 7);
+  return dt.getUTCFullYear() + '-W' + String(wk).padStart(2, '0');
 }
-function planSaveLocal(p) { p.updatedAt = Date.now(); localStorage.setItem(PLAN_KEY, JSON.stringify(p)); planDirty = true; }
-function planAdd(d) { const p = planData(); p.entries.push({ day: d, time: '', id: RECIPES[0] ? RECIPES[0].id : '' }); planSaveLocal(p); renderPlan(); }
-function planTime(i, v) { const p = planData(); if (p.entries[i]) { p.entries[i].time = v; planSaveLocal(p); } }
-function planSel(i, v) { const p = planData(); if (p.entries[i]) { p.entries[i].id = v; planSaveLocal(p); } }
-function planDel(i) { const p = planData(); p.entries.splice(i, 1); planSaveLocal(p); renderPlan(); }
+function weekLabel(k) {
+  const y = +k.slice(0, 4), w = +k.slice(6);
+  const jan4 = new Date(Date.UTC(y, 0, 4));
+  const day = jan4.getUTCDay() || 7;
+  const mon = new Date(jan4.getTime()); mon.setUTCDate(jan4.getUTCDate() - day + 1 + (w - 1) * 7);
+  const sun = new Date(mon.getTime()); sun.setUTCDate(mon.getUTCDate() + 6);
+  const fmt = d => d.toLocaleDateString('de-DE', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+  return k + ' (' + fmt(mon) + ' – ' + fmt(sun) + ')';
+}
+function planData() {
+  try { const p = JSON.parse(localStorage.getItem(PLAN_KEY) || 'null'); if (p && p.plans) return p; } catch (e) {}
+  const plans = {};
+  try {
+    const v2 = JSON.parse(localStorage.getItem('rezepte-plan-v2') || 'null');
+    if (v2 && Array.isArray(v2.entries)) plans[planWeek] = v2.entries;
+    else {
+      const v1 = JSON.parse(localStorage.getItem('rezepte-plan-v1') || '{}');
+      const es = [];
+      Object.keys(v1).forEach(d => { if (v1[d] && v1[d].id) es.push({ day: +d, time: '', id: v1[d].id }); });
+      if (es.length) plans[planWeek] = es;
+    }
+  } catch (e) {}
+  return { updatedAt: 0, plans: plans };
+}
+function planSaveLocal(p) {
+  Object.keys(p.plans).forEach(k => { if (!(p.plans[k] || []).length) delete p.plans[k]; });
+  p.updatedAt = Date.now(); localStorage.setItem(PLAN_KEY, JSON.stringify(p)); planDirty = true;
+}
+function planWeekEntries() { const p = planData(); return p.plans[planWeek] || (p.plans[planWeek] = []); }
+function planAdd(d) { const es = planWeekEntries(); es.push({ day: d, time: '', id: RECIPES[0] ? RECIPES[0].id : '' }); planSaveLocal(planData()); renderPlan(); }
+function planTime(i, v) { const es = planWeekEntries(); if (es[i]) { es[i].time = v; planSaveLocal(planData()); } }
+function planSel(i, v) { const es = planWeekEntries(); if (es[i]) { es[i].id = v; planSaveLocal(planData()); } }
+function planDel(i) { const es = planWeekEntries(); es.splice(i, 1); planSaveLocal(planData()); renderPlan(); }
+function planShiftWeek(delta) {
+  const y = +planWeek.slice(0, 4), w = +planWeek.slice(6);
+  const jan4 = new Date(Date.UTC(y, 0, 4));
+  const day = jan4.getUTCDay() || 7;
+  const mon = new Date(jan4.getTime()); mon.setUTCDate(jan4.getUTCDate() - day + 1 + (w - 1 + delta) * 7);
+  planWeek = weekKey(new Date(mon.getUTCFullYear(), mon.getUTCMonth(), mon.getUTCDate()));
+  renderPlan();
+}
 function renderPlan() {
   const p = planData();
-  if (p.updatedAt === 0 && p.entries.length) planSaveLocal(p);
+  if (p.updatedAt === 0 && Object.keys(p.plans).some(k => (p.plans[k] || []).length)) planSaveLocal(p);
+  $('planWeekLabel').textContent = weekLabel(planWeek);
   if (!RECIPES.length) { $('planRows').innerHTML = '<div class="empty">Noch keine Rezepte geladen. Erst mit dem Repo synchronisieren.</div>'; return; }
+  const es = p.plans[planWeek] || [];
   $('planRows').innerHTML = DAYS.map((d, i) => {
-    const idxs = p.entries.map((e, idx) => ({ e: e, idx: idx })).filter(x => x.e.day === i)
+    const idxs = es.map((e, idx) => ({ e: e, idx: idx })).filter(x => x.e.day === i)
       .sort((a, b) => (a.e.time || '').localeCompare(b.e.time || ''));
     const rows = idxs.map(x => {
       const opts = RECIPES.map(r => '<option value="' + r.id + '"' + (r.id === x.e.id ? ' selected' : '') + '>' + esc(r.title) + '</option>').join('');
@@ -684,7 +729,7 @@ async function planPull() {
       { headers: { Accept: 'application/vnd.github.raw' } });
     if (r.ok) {
       const remote = JSON.parse(await r.text());
-      if (Array.isArray(remote.entries) && (remote.updatedAt || 0) > (planData().updatedAt || 0)) {
+      if (remote.plans && (remote.updatedAt || 0) > (planData().updatedAt || 0)) {
         localStorage.setItem(PLAN_KEY, JSON.stringify(remote));
         if ($('tab-plan').classList.contains('active')) renderPlan();
       }
@@ -714,12 +759,11 @@ async function planPush() {
 }
 function planSyncShow() { (planDirty ? planPush() : planPull()).then(renderPlan); }
 function planToShop() {
-  const p = planData();
-  const used = p.entries.filter(e => e.id && RECIPES.some(r => r.id === e.id));
-  if (!used.length) { toast('Plan ist leer – erst ein Rezept eintragen'); return; }
+  const es = (planData().plans[planWeek] || []).filter(e => e.id && RECIPES.some(r => r.id === e.id));
+  if (!es.length) { toast('Plan ist leer – erst ein Rezept eintragen'); return; }
   const selM = selMap();
   let n = 0;
-  used.forEach(e => {
+  es.forEach(e => {
     const r = RECIPES.find(x => x.id === e.id);
     selM[r.id] = (selM[r.id] || 0) + (r.portionen || 4);
     n++;
@@ -729,10 +773,66 @@ function planToShop() {
   renderGrid();
   go('shop');
 }
+const AI_PLAN_SYSTEM = [
+  'Du bist ein Kochplan-Assistent einer deutschen Familie und planst eine Woche mit vorhandenen Rezepten.',
+  'Regeln:',
+  '- Ein bis zwei Gerichte pro Tag, mit sinnvoller Uhrzeit (z. B. 12:30 oder 18:30).',
+  '- Unter der Woche lieber schnelle Rezepte (wenig zeit_min), am Wochenende darf es aufwändiger sein.',
+  '- Mische Kategorien und Tags abwechslungsreich; benutze jedes Rezept höchstens einmal pro Woche.',
+  '- Antworte als JSON: {"plan":[{"day":0,"time":"18:30","title":"Rezepttitel"}]} mit day 0=Mo bis 6=So.',
+  '- title muss EXAKT einem der gegebenen Rezepttitel entsprechen; nichts erfinden.'
+].join('\n');
+function aiPlanMsg(txt, ok) { const el = $('planMsg'); el.className = 'msg ' + (ok ? 'ok' : 'err'); el.textContent = txt; }
+async function aiPlanWeek() {
+  const btn = $('planAI');
+  if (!mistralKey()) { aiPlanMsg('Kein Gemini-API-Key hinterlegt. Erst unter „Mehr → Einstellungen“ speichern.', false); return; }
+  if (!RECIPES.length) { aiPlanMsg('Keine Rezepte geladen. Erst synchronisieren.', false); return; }
+  const es = planWeekEntries();
+  if (es.length && !confirm('Diese Woche hat schon Einträge. Mit dem KI-Vorschlag überschreiben?')) return;
+  btn.disabled = true; btn.textContent = '🤖 Plane …';
+  aiPlanMsg('', false); $('planMsg').className = 'msg';
+  try {
+    const list = RECIPES.map(r => '- ' + r.title + ' | Kategorie: ' + r.kategorie + ' | Tags: ' + (r.tags || []).join(',') + ' | Zeit: ' + (r.zeit_min || '?') + ' Min | Portionen: ' + (r.portionen || '?')).join('\n');
+    const body = {
+      systemInstruction: { parts: [{ text: AI_PLAN_SYSTEM }] },
+      contents: [{ role: 'user', parts: [{ text: 'Verfügbare Rezepte:\n' + list + '\n\nPlane die Woche ' + planWeek + '.' }] }],
+      generationConfig: { temperature: 0.4, responseMimeType: 'application/json' }
+    };
+    const r = await fetch(GEMINI_URL + '?key=' + encodeURIComponent(mistralKey()), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+    });
+    if (!r.ok) throw new Error('Gemini-Fehler ' + r.status + ': ' + (await r.text()).slice(0, 140));
+    const data = await r.json();
+    const cand = data.candidates && data.candidates[0];
+    let raw = cand && cand.content && cand.content.parts ? cand.content.parts.map(p => p.text || '').join('') : '';
+    raw = raw.replace(/^\`\`\`json\s*/i, '').replace(/^\`\`\`\s*/, '').replace(/\s*\`\`\`$/, '').trim();
+    const parsed = JSON.parse(raw);
+    const byTitle = {};
+    RECIPES.forEach(rc => byTitle[String(rc.title).toLowerCase()] = rc.id);
+    const es2 = [];
+    let skipped = 0;
+    (parsed.plan || []).forEach(e => {
+      const id = byTitle[String(e.title || '').toLowerCase()];
+      if (!id || !(e.day >= 0 && e.day <= 6)) { skipped++; return; }
+      es2.push({ day: +e.day, time: e.time || '', id: id });
+    });
+    if (!es2.length) throw new Error('Kein brauchbarer Vorschlag (kein Titel passte zu einem Rezept)');
+    const p = planData(); p.plans[planWeek] = es2; planSaveLocal(p);
+    renderPlan(); planPush();
+    aiPlanMsg('✅ Woche geplant: ' + es2.length + ' Gerichte' + (skipped ? ' (' + skipped + ' Vorschläge ohne Titel-Treffer übersprungen)' : '') + '. Prüfen und ggf. anpassen!', true);
+  } catch (e) {
+    aiPlanMsg('Fehler: ' + e.message, false);
+  }
+  btn.disabled = false; btn.textContent = '🤖 Woche planen (KI)';
+}
+$('planPrev').addEventListener('click', () => planShiftWeek(-1));
+$('planNext').addEventListener('click', () => planShiftWeek(1));
+$('planToday').addEventListener('click', () => { planWeek = weekKey(new Date()); renderPlan(); });
+$('planAI').addEventListener('click', aiPlanWeek);
 $('planToShop').addEventListener('click', planToShop);
 $('planClear').addEventListener('click', () => {
-  if (!confirm('Wochenplan komplett leeren?')) return;
-  const p = planData(); p.entries = []; planSaveLocal(p);
+  if (!confirm('Wochenplan der angezeigten Woche komplett leeren?')) return;
+  const p = planData(); p.plans[planWeek] = []; planSaveLocal(p);
   renderPlan(); planPush();
   toast('Plan geleert');
 });
