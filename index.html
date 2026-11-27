@@ -43,6 +43,9 @@
   .cardlist.on { opacity:1; background:#ffe9c9; box-shadow:0 0 0 2px var(--accent); }
   .cardfav { position:absolute; top:.55rem; right:2.7rem; background:#f0ebe4; border:none; border-radius:8px; padding:.3rem .5rem; cursor:pointer; font-size:1rem; opacity:.5; }
   .cardfav.on { opacity:1; }
+  .tbtn { display:inline-block; margin-left:.5rem; padding:.1rem .55rem; border:none; border-radius:6px; background:var(--accent); color:#fff; font-size:.78rem; cursor:pointer; vertical-align:middle; }
+  .timerbox { position:fixed; bottom:96px; right:12px; background:#333; color:#fff; padding:.7rem .9rem; border-radius:12px; font-size:1.1rem; z-index:60; box-shadow:0 2px 10px rgba(0,0,0,.3); text-align:center; }
+  .timerbox button { margin:.35rem .2rem 0; padding:.3rem .7rem; border:none; border-radius:6px; background:var(--accent); color:#fff; cursor:pointer; font-size:.85rem; }
   .dshop { display:block; width:100%; margin-top:.6rem; padding:.7rem; border:none; border-radius:10px; background:var(--accent); color:#fff; font-size:.95rem; cursor:pointer; }
   .dshop.on { background:#1e7a34; }
   .shoprec { display:flex; align-items:center; gap:.5rem; background:var(--card); border-radius:10px; padding:.55rem .8rem; margin-bottom:.45rem; box-shadow:0 1px 4px rgba(0,0,0,.06); font-size:.95rem; }
@@ -246,7 +249,7 @@
 </nav>
 <script>
 const REPO = { owner: 'bardenhagennils-tech', repo: 'Rezepte-' };
-const APP_VERSION = 'v16-favoriten';
+const APP_VERSION = 'v17-timer';
 document.getElementById('appVer').textContent = 'App ' + APP_VERSION;
 const KAT = ['Vorspeise','Hauptgericht','Nachtisch','Backen','Getränke','Salat','Suppe','Beilage','Frühstück','Soße','Sonstiges'];
 const RKEY = 'rezepte-cache-v2', TKEY = 'gh-token', OKEY = 'rezepte-outbox';
@@ -490,6 +493,7 @@ function renderDetail() {
   $('detail').innerHTML = `
     <button class="back" onclick="show(null)">← Alle Rezepte</button>
     <h2>${esc(r.title)}</h2>
+    <div id="timerbox" class="timerbox" style="display:none"></div>
     <div class="meta2">
       <span>${esc(r.kategorie)}</span>
       ${r.zeit_min ? `<span>⏱ ${r.zeit_min} Min</span>` : ''}
@@ -510,12 +514,50 @@ function renderDetail() {
       <div><h3>Zutaten</h3><ul>${ings}</ul></div>
       <div><h3>Zubereitung (Schritt antippen = erledigt)</h3>
         <ol id="steps">${steps.map((s, idx) =>
-          `<li id="st${idx}" onclick="toggleStep(${idx})">${esc(s.replace(/^\d+\.\s*/, ''))}</li>`).join('')}</ol>
+          `<li id="st${idx}" onclick="toggleStep(${idx})">${esc(s.replace(/^\d+\.\s*/, ''))}${timerBtn(s)}</li>`).join('')}</ol>
       </div>
     </div>
     ${(r.notizen||'').trim() ? '<h3>Notizen &amp; Tipps</h3><div class="notes">' + notesToHtml(r.notizen) + '</div>' : ''}`;
 }
 function ch(d) { portions = Math.max(1, portions + d); renderDetail(); }
+function timerBtn(s) {
+  const m = String(s).match(/(\d+)\s*(?:min|Minuten|Minute)/);
+  if (!m) return '';
+  const min = parseInt(m[1], 10);
+  if (!(min >= 1 && min <= 240)) return '';
+  return ' <button class="tbtn" onclick="event.stopPropagation();startTimer(' + min + ')">⏱ ' + min + ' Min</button>';
+}
+let timerEnd = null, timerInt = null;
+function fmtTime(sec) {
+  const m = Math.floor(sec / 60), r = sec % 60;
+  return m + ':' + String(r).padStart(2, '0');
+}
+function startTimer(min) {
+  stopTimer();
+  timerEnd = Date.now() + min * 60000;
+  const box = $('timerbox');
+  box.style.display = 'block';
+  box.innerHTML = '⏱ <b id="tleft"></b><br><button onclick="stopTimer()">Stop</button>';
+  tickTimer();
+  timerInt = setInterval(tickTimer, 1000);
+}
+function tickTimer() {
+  const left = Math.round((timerEnd - Date.now()) / 1000);
+  const el = $('tleft');
+  if (left <= 0) {
+    stopTimer();
+    toast('⏰ Zeit um!');
+    if (navigator.vibrate) navigator.vibrate([400, 200, 400]);
+    return;
+  }
+  if (el) el.textContent = fmtTime(left);
+}
+function stopTimer() {
+  if (timerInt) clearInterval(timerInt);
+  timerInt = null; timerEnd = null;
+  const box = $('timerbox');
+  if (box) { box.style.display = 'none'; box.innerHTML = ''; }
+}
 function toggleStep(i) {
   doneSteps.has(i) ? doneSteps.delete(i) : doneSteps.add(i);
   document.getElementById('st' + i).classList.toggle('cook-ok', doneSteps.has(i));
