@@ -256,7 +256,7 @@
 </nav>
 <script>
 const REPO = { owner: 'bardenhagennils-tech', repo: 'Rezepte-' };
-const APP_VERSION = 'v18-planfix';
+const APP_VERSION = 'v18b-favfix';
 document.getElementById('appVer').textContent = 'App ' + APP_VERSION;
 const KAT = ['Vorspeise','Hauptgericht','Nachtisch','Backen','Getränke','Salat','Suppe','Beilage','Frühstück','Soße','Sonstiges'];
 const RKEY = 'rezepte-cache-v2', TKEY = 'gh-token', OKEY = 'rezepte-outbox';
@@ -454,6 +454,21 @@ const FAV_KEY = 'rezepte-fav-v1';
 let favOnly = false;
 function favArr() { try { return JSON.parse(localStorage.getItem(FAV_KEY) || '[]'); } catch (e) { return []; } }
 function isFav(id) { return favArr().includes(id); }
+function toggleFav(id) {
+  const f = favArr();
+  const i = f.indexOf(id);
+  if (i >= 0) f.splice(i, 1); else f.push(id);
+  localStorage.setItem(FAV_KEY, JSON.stringify(f));
+  renderGrid();
+  if (open !== null) renderDetail();
+  toast(i >= 0 ? 'Aus den Favoriten entfernt' : '🧡 Zu den Favoriten');
+}
+function toggleFavFilter() {
+  favOnly = !favOnly;
+  $('btnFav').textContent = favOnly ? '🧡' : '🤍';
+  $('btnFav').title = favOnly ? 'Alle Rezepte zeigen' : 'Nur Favoriten zeigen';
+  renderGrid();
+}
 function refreshTags() {
   const list = [];
   filtered().forEach(r => (r.tags || []).forEach(t => { if (!list.includes(t)) list.push(t); }));
