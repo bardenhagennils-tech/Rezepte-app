@@ -155,7 +155,13 @@
       <label>Quelle (freiwillig)</label>
       <input id="nQuelleT">
       <label>Rezept-Foto (optional, wird als assets/&lt;name&gt;.jpg ins Repo hochgeladen)</label>
-      <input id="nPic" type="file" accept="image/*">
+      <div style="display:flex;gap:.4rem;flex-wrap:wrap">
+        <button type="button" id="nPicCam" style="padding:.55rem .8rem;border:none;border-radius:8px;background:var(--accent);color:#fff;font-size:.9rem;cursor:pointer">📷 Foto machen</button>
+        <button type="button" id="nPicGal" style="padding:.55rem .8rem;border:1px solid var(--line);border-radius:8px;background:#fff;font-size:.9rem;cursor:pointer">🖼 Aus Galerie</button>
+        <button type="button" id="nPicDel" style="display:none;padding:.55rem .8rem;border:none;border-radius:8px;background:#8a837a;color:#fff;font-size:.9rem;cursor:pointer">✕ Foto entfernen</button>
+      </div>
+      <input id="nPicCamF" type="file" accept="image/*" capture="environment" style="display:none">
+      <input id="nPic" type="file" accept="image/*" style="display:none">
       <img id="nPicPrev" style="display:none;max-height:160px;border-radius:8px;margin-top:.4rem">
       <label>Zutaten * (eine pro Zeile, z. B. „500 g Kartoffeln“)</label>
       <textarea id="nZut" required></textarea>
@@ -228,7 +234,7 @@
 </nav>
 <script>
 const REPO = { owner: 'bardenhagennils-tech', repo: 'Rezepte-' };
-const APP_VERSION = 'v12-shareimages';
+const APP_VERSION = 'v13-kamera';
 document.getElementById('appVer').textContent = 'App ' + APP_VERSION;
 const KAT = ['Vorspeise','Hauptgericht','Nachtisch','Backen','Getränke','Salat','Suppe','Beilage','Frühstück','Soße','Sonstiges'];
 const RKEY = 'rezepte-cache-v2', TKEY = 'gh-token', OKEY = 'rezepte-outbox';
@@ -517,8 +523,8 @@ const AI_SYSTEM = [
 function setNewImage(dataUrl) {
   newImage = dataUrl || null;
   const p = $('nPicPrev');
-  if (newImage) { p.src = newImage; p.style.display = 'block'; }
-  else p.style.display = 'none';
+  if (newImage) { p.src = newImage; p.style.display = 'block'; $('nPicDel').style.display = 'inline-block'; }
+  else { p.style.display = 'none'; $('nPicDel').style.display = 'none'; }
 }
 function aiMsg(txt, ok) { const el = $('iMsg'); el.className = 'msg ' + (ok ? 'ok' : 'err'); el.textContent = txt; }
 function downscaleImage(file) {
@@ -607,11 +613,16 @@ function aiFillForm(rec) {
   if (rec.schwierigkeit) $('nDiff').value = String(rec.schwierigkeit).slice(0, 20);
 }
 $('iGo').addEventListener('click', aiImport);
-$('nPic').addEventListener('change', async () => {
-  const f = $('nPic').files[0];
-  if (!f) return;
-  try { setNewImage(await downscaleImage(f)); } catch (e) { toast('Foto konnte nicht gelesen werden'); }
-});
+async function pickImage(file) {
+  if (!file) return;
+  try { setNewImage(await downscaleImage(file)); }
+  catch (e) { toast('Foto konnte nicht gelesen werden'); }
+}
+$('nPic').addEventListener('change', () => pickImage($('nPic').files[0]));
+$('nPicCamF').addEventListener('change', () => pickImage($('nPicCamF').files[0]));
+$('nPicCam').addEventListener('click', () => { $('nPicCamF').value = ''; $('nPicCamF').click(); });
+$('nPicGal').addEventListener('click', () => { $('nPic').value = ''; $('nPic').click(); });
+$('nPicDel').addEventListener('click', () => { $('nPic').value = ''; $('nPicCamF').value = ''; setNewImage(null); });
 $('mSave').addEventListener('click', () => {
   const t = $('sMist').value.trim();
   if (!t) { toast('Kein Key eingegeben'); return; }
@@ -952,7 +963,7 @@ $('nSubmit').addEventListener('click', async () => {
       toast('Offline gepuffert, wird später hochgeladen');
     }
     ['nTitle','nTags','nZeit','nPort','nPortBezug','nQuelleT','nZut','nZub','nNot'].forEach(i => $(i).value = '');
-    $('nPic').value = ''; setNewImage(null);
+    $('nPic').value = ''; $('nPicCamF').value = ''; setNewImage(null);
   } catch (e) {
     if (e.message === 'Abgebrochen') { msg.className = 'msg err'; msg.textContent = 'Abgebrochen.'; }
     else {

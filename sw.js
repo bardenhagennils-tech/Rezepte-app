@@ -1,6 +1,6 @@
 /* Service Worker: macht die App vollständig offline-fähig.
    Rezeptdaten leben im localStorage; der SW cached nur die App-Dateien. */
-const CACHE = 'rezepte-app-v12-images';
+const CACHE = 'rezepte-app-v13-kamera';
 const SHELL = ['./', './index.html', './manifest.json', './icon.svg'];
 
 self.addEventListener('install', e => {
