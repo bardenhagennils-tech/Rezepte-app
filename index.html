@@ -124,7 +124,7 @@
     <div id="detail" style="display:none"></div>
   </div>
   <div class="tab" id="tab-new">
-    <h2 style="margin:.3rem 0">Neues Rezept</h2>
+    <h2 style="margin:.3rem 0" id="newHead">Neues Rezept</h2>
     <div class="setcard" style="margin-bottom:1rem">
       <p style="margin-top:0;font-size:.9rem"><b>🤖 KI-Import</b>: Rezept-Text einfügen, mehrere Screenshots auswählen oder einen Link einfügen (z. B. Dr. Oetker oder Instagram) – die KI liest es aus und füllt das Formular. Kombinieren ist erlaubt. Danach prüfen und unten speichern.</p>
       <label style="display:block;font-size:.82rem;color:var(--muted);margin:.4rem 0 .2rem">Rezept-Text (z. B. aus Instagram kopieren)</label>
@@ -171,6 +171,7 @@
       <textarea id="nNot" placeholder="Nährwerte, Tipps, Varianten …"></textarea>
       <p class="hint">Gespeichert wird als Datei <code>recipes/&lt;titel&gt;.md</code> nach FORMAT.md direkt auf <code>main</code>. Mit Internet wird sofort committet; offline wird es lokal gepuffert und automatisch später hochgeladen.</p>
       <button class="primary" id="nSubmit">Rezept speichern</button>
+      <button type="button" id="nCancel" style="display:none;width:100%;margin-top:.5rem;padding:.6rem;border:1px solid var(--line);border-radius:10px;background:#fff;font-size:.95rem;cursor:pointer">Bearbeiten abbrechen</button>
       <div class="msg" id="nMsg"></div>
     </form>
   </div>
@@ -234,11 +235,11 @@
 </nav>
 <script>
 const REPO = { owner: 'bardenhagennils-tech', repo: 'Rezepte-' };
-const APP_VERSION = 'v13-kamera';
+const APP_VERSION = 'v14-edit';
 document.getElementById('appVer').textContent = 'App ' + APP_VERSION;
 const KAT = ['Vorspeise','Hauptgericht','Nachtisch','Backen','Getränke','Salat','Suppe','Beilage','Frühstück','Soße','Sonstiges'];
 const RKEY = 'rezepte-cache-v2', TKEY = 'gh-token', OKEY = 'rezepte-outbox';
-let RECIPES = [], SHAS = {}, open = null, portions = 0, doneSteps = new Set(), newImage = null;
+let RECIPES = [], SHAS = {}, open = null, portions = 0, doneSteps = new Set(), newImage = null, editFile = null, editBild = '';
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
@@ -470,6 +471,7 @@ function renderDetail() {
       <button onclick="ch(1)">+</button>
     </div>
     <button class="dshop${sel(r.id)!==null?' on':''}" onclick="toggleSelDetail()">${sel(r.id)!==null ? '🛒 Auf der Einkaufsliste ✓ (antippen zum Entfernen)' : '🛒 Zutaten auf die Einkaufsliste'}</button>
+    <button class="back" style="width:100%;margin-top:.4rem" onclick="editOpen(${open})">✏️ Rezept bearbeiten</button>
     <div class="cols">
       <div><h3>Zutaten</h3><ul>${ings}</ul></div>
       <div><h3>Zubereitung (Schritt antippen = erledigt)</h3>
@@ -520,11 +522,15 @@ const AI_SYSTEM = [
 '- anteilig: Feuer/Emoji/Kommentare weg, nur das Rezept.',
 '- Bei mehreren Fotos oder Text+Fotos stammt alles aus derselben Quelle: zu EINEM Rezept zusammenführen (z. B. Zutaten aus dem einen Bild, Zubereitung aus dem anderen). Bei einer URL zuerst den Seiteninhalt abrufen und nur daraus extrahieren, nichts erfinden.'
 ].join('\n');
-function setNewImage(dataUrl) {
-  newImage = dataUrl || null;
+function updatePicPreview() {
   const p = $('nPicPrev');
   if (newImage) { p.src = newImage; p.style.display = 'block'; $('nPicDel').style.display = 'inline-block'; }
+  else if (editBild) { p.src = bildUrl(editBild); p.style.display = 'block'; $('nPicDel').style.display = 'inline-block'; }
   else { p.style.display = 'none'; $('nPicDel').style.display = 'none'; }
+}
+function setNewImage(dataUrl) {
+  newImage = dataUrl || null;
+  updatePicPreview();
 }
 function aiMsg(txt, ok) { const el = $('iMsg'); el.className = 'msg ' + (ok ? 'ok' : 'err'); el.textContent = txt; }
 function downscaleImage(file) {
@@ -622,7 +628,7 @@ $('nPic').addEventListener('change', () => pickImage($('nPic').files[0]));
 $('nPicCamF').addEventListener('change', () => pickImage($('nPicCamF').files[0]));
 $('nPicCam').addEventListener('click', () => { $('nPicCamF').value = ''; $('nPicCamF').click(); });
 $('nPicGal').addEventListener('click', () => { $('nPic').value = ''; $('nPic').click(); });
-$('nPicDel').addEventListener('click', () => { $('nPic').value = ''; $('nPicCamF').value = ''; setNewImage(null); });
+$('nPicDel').addEventListener('click', () => { $('nPic').value = ''; $('nPicCamF').value = ''; editBild = ''; setNewImage(null); });
 $('mSave').addEventListener('click', () => {
   const t = $('sMist').value.trim();
   if (!t) { toast('Kein Key eingegeben'); return; }
@@ -877,6 +883,45 @@ function slugify(title) {
   return title.replace(/[äöüÄÖÜß]/g, c => map[c]).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'rezept';
 }
 function numOrNull(v) { const n = parseInt(v, 10); return isNaN(n) ? null : n; }
+function editOpen(i) {
+  const r = RECIPES[i];
+  if (!r) return;
+  editFile = 'recipes/' + r.id + '.md';
+  editBild = r.bild || '';
+  newImage = null;
+  $('nTitle').value = r.title || '';
+  if (KAT.includes(r.kategorie)) $('nKat').value = r.kategorie;
+  $('nDiff').value = r.schwierigkeit || 'leicht';
+  $('nTags').value = (r.tags || []).join(', ');
+  $('nZeit').value = r.zeit_min || '';
+  $('nPort').value = r.portionen || '';
+  $('nPortBezug').value = r.portionen_bezug || '';
+  $('nQuelleT').value = r.quelle || '';
+  $('nZut').value = r.zutaten || '';
+  $('nZub').value = r.zubereitung || '';
+  $('nNot').value = r.notizen || '';
+  updatePicPreview();
+  $('newHead').textContent = '✏️ Rezept bearbeiten: ' + r.title;
+  $('nCancel').style.display = 'block';
+  $('nMsg').className = 'msg'; $('nMsg').textContent = '';
+  show(null);
+  go('new');
+  window.scrollTo(0, 0);
+}
+function resetFormFull(keepMsgs) {
+  editFile = null; editBild = ''; newImage = null;
+  ['nTitle','nTags','nZeit','nPort','nPortBezug','nQuelleT','nZut','nZub','nNot'].forEach(i => $(i).value = '');
+  $('iText').value = ''; $('iUrl').value = ''; $('iPic').value = '';
+  $('nPic').value = ''; $('nPicCamF').value = '';
+  updatePicPreview();
+  $('newHead').textContent = 'Neues Rezept';
+  $('nCancel').style.display = 'none';
+  if (!keepMsgs) {
+    const m = $('nMsg'); m.className = 'msg'; m.textContent = '';
+    const im = $('iMsg'); im.className = 'msg'; im.textContent = '';
+  }
+}
+$('nCancel').addEventListener('click', () => { resetFormFull(false); go('list'); });
 function formToRecipe() {
   const tags = $('nTags').value.split(',').map(s => s.trim().toLowerCase()).filter(Boolean).slice(0, 5);
   const zut = $('nZut').value.split('\n').map(s => s.trim()).filter(Boolean).map(s => s.startsWith('-') ? s : '- ' + s).join('\n');
@@ -888,12 +933,15 @@ function formToRecipe() {
   const q = $('nQuelleT').value.trim(); if (q) meta += `\nquelle: ${q}`;
   const nv = $('nNot').value.trim(); const mdNotiz = nv ? '\n## Notizen\n\n' + nv : '';
   const slug = slugify($('nTitle').value);
-  const imgPath = 'assets/' + slug + '.jpg';
+  const baseFile = editFile || ('recipes/' + slug + '.md');
+  const imgPath = editFile ? editFile.replace('recipes/', 'assets/').replace(/\.md$/, '.jpg') : ('assets/' + slug + '.jpg');
   if (newImage) meta += `\nbild: ${imgPath}`;
-  return { file: 'recipes/' + slug + '.md',
+  else if (editBild) meta += `\nbild: ${editBild}`;
+  return { file: baseFile,
     md: `---\n${meta}\n---\n\n## Zutaten\n\n${zut}\n\n## Zubereitung\n\n${zub}\n${mdNotiz}\n`,
     title: $('nTitle').value.trim(),
-    img: newImage || undefined };
+    img: newImage || undefined,
+    allowOverwrite: !!editFile };
 }
 async function commitRecipe(item) {
   const token = localStorage.getItem(TKEY);
@@ -921,7 +969,7 @@ async function commitRecipe(item) {
   const put = await api(`/repos/${REPO.owner}/${REPO.repo}/contents/${encodeURIComponent(path)}`, {
     method: 'PUT',
     headers: { Authorization: 'Bearer ' + token, Accept: 'application/vnd.github+json', 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message: 'Neues Rezept: ' + item.title + (sha ? ' (überschrieben)' : ''),
+    body: JSON.stringify({ message: (item.allowOverwrite ? 'Rezept bearbeitet: ' : 'Neues Rezept: ') + item.title + (sha ? ' (überschrieben)' : ''),
       content: window.btoa(unescape(encodeURIComponent(item.md))), sha, branch: 'main' })
   });
   if (!put.ok) throw new Error('GitHub ' + put.status + ': ' + (await put.text()).slice(0, 150));
@@ -962,8 +1010,7 @@ $('nSubmit').addEventListener('click', async () => {
       msg.className = 'msg ok'; msg.textContent = '📴 Offline gespeichert. Sobald du wieder online bist, wird es automatisch ins Repo committet.';
       toast('Offline gepuffert, wird später hochgeladen');
     }
-    ['nTitle','nTags','nZeit','nPort','nPortBezug','nQuelleT','nZut','nZub','nNot'].forEach(i => $(i).value = '');
-    $('nPic').value = ''; $('nPicCamF').value = ''; setNewImage(null);
+    resetFormFull(true);
   } catch (e) {
     if (e.message === 'Abgebrochen') { msg.className = 'msg err'; msg.textContent = 'Abgebrochen.'; }
     else {
